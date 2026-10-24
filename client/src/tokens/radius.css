@@ -1,0 +1,13 @@
+/* ───────────────────────────────────────────────────────────────────────
+   RADIUS  — soft, modern, never fully pill except chips/toggles/dots.
+   ─────────────────────────────────────────────────────────────────────── */
+:root {
+  --radius-xs:  7px;    /* small mono number chips, icon squares */
+  --radius-sm:  9px;    /* talk buttons */
+  --radius-md:  10px;   /* buttons, inputs */
+  --radius-lg:  14px;   /* summary panel, small cards */
+  --radius-xl:  18px;   /* cards, modals, feedback */
+  --radius-2xl: 20px;   /* call card */
+  --radius-pill:999px;  /* chips, badges, toggle, status dots */
+  --radius-circle:50%;  /* orb, avatars */
+}

@@ -1,0 +1,43 @@
+/* ───────────────────────────────────────────────────────────────────────
+   SPACING
+   4px base grid. Use these for gaps, padding, and stack rhythm.
+   ─────────────────────────────────────────────────────────────────────── */
+:root {
+  --space-0:  0;
+  --space-1:  2px;
+  --space-2:  4px;
+  --space-3:  6px;
+  --space-4:  8px;
+  --space-5:  10px;
+  --space-6:  12px;
+  --space-7:  14px;
+  --space-8:  16px;
+  --space-9:  18px;
+  --space-10: 20px;
+  --space-12: 24px;
+  --space-14: 28px;
+  --space-16: 32px;
+  --space-20: 40px;
+  --space-24: 48px;
+  --space-28: 56px;
+
+  /* standardized control / element sizes */
+  --control-height-sm: 36px;   /* compact buttons, toggle cells */
+  --control-height-md: 42px;   /* default buttons, inputs */
+  --control-height-lg: 48px;   /* primary CTAs */
+  --hit-target-min:    44px;   /* minimum tap target */
+
+  --icon-xs: 13px;
+  --icon-sm: 15px;
+  --icon-md: 18px;
+  --icon-lg: 24px;
+
+  --orb-sm:  108px;   /* agent card */
+  --orb-md:  152px;   /* mobile call view */
+  --orb-lg:  184px;   /* desktop call view */
+
+  /* layout */
+  --container-max: 1040px;   /* header + landing grid width */
+  --card-max:      472px;    /* call card / single column */
+  --twocol-max:    912px;    /* summary + feedback two-column */
+}

@@ -1,0 +1,17 @@
+/* ───────────────────────────────────────────────────────────────────────
+   Design System
+   Global entry point. Consumers link THIS file only.
+   Keep this as @import lines only — no rules inline.
+   ─────────────────────────────────────────────────────────────────────── */
+@import "tokens/fonts.css";
+@import "tokens/colors.css";
+@import "tokens/typography.css";
+@import "tokens/spacing.css";
+@import "tokens/radius.css";
+@import "tokens/shadows.css";
+@import "tokens/motion.css";
+@import "patterns/orb.css";
+@import "patterns/controls.css";
+@import "patterns/app.css";
+@import "patterns/charts.css";
+@import "patterns/forms.css";

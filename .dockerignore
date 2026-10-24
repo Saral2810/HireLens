@@ -1,0 +1,42 @@
+# Git & IDE
+.git
+.gitignore
+.editorconfig
+.pre-commit-config.yaml
+.agents
+.github
+
+# Node dependencies & local builds
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment and sensitive credential files
+.env
+.env.*
+!.env.example
+*.env
+diff.txt
+inject.cjs
+append.cjs
+
+# Testing & Performance Benchmarks
+tests
+tests/
+coverage
+*.test.js
+*.spec.js
+
+# Temporary files & logs
+*.log
+scratch
+scratch/
+.system_generated
+ui_assets
+mock_server.js
+
+# Documentation (kept in git, not required in runtime container)
+docs/
+*.md
+!README.md

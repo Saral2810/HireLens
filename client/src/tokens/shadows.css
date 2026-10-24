@@ -1,0 +1,20 @@
+/* ───────────────────────────────────────────────────────────────────────
+   SHADOWS & GLOWS
+   The system is mostly flat (hairline borders + faint inner sheen). Shadows
+   are reserved for modals, the primary button lift, and the speaking orb glow.
+   ─────────────────────────────────────────────────────────────────────── */
+:root {
+  /* surface depth */
+  --shadow-card-inner: inset 0 1px 0 var(--border-soft);   /* top sheen on cards */
+  --shadow-modal:      0 40px 110px -30px rgba(0,0,0,.45);
+  --shadow-pop:        0 20px 50px -20px rgba(0,0,0,.7);
+
+  /* button lift */
+  --shadow-primary-hover: 0 10px 26px -14px rgba(0,0,0,.45);
+
+  /* orb glow (when the agent is speaking) — color is set per accent at use site,
+     these are the blur/spread recipes */
+  --glow-orb:       0 0 80px;   /* large soft halo  (use rgba accent .5) */
+  --glow-orb-tight: 0 0 26px;   /* tight core glow  (use rgba accent .45) */
+  --glow-status:    0 0 9px;    /* live status dot  (use the status color) */
+}
