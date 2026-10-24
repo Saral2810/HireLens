@@ -1,0 +1,11 @@
+/* ── Webfonts ──────────────────────────────────────────────────────────────
+   IBM Plex Mono is the system's technical/label typeface (eyebrows, badges,
+   timers, code). Loaded from Google Fonts.
+
+   The UI/body typeface is **Helvetica Neue** with a system fallback stack
+   (see typography.css → --font-sans). Helvetica Neue ships with macOS/iOS and
+   is not a webfont; on platforms without it the stack falls back to Arial /
+   system-ui. If you need pixel-identical rendering on every platform, license
+   and self-host Helvetica Neue and add an @font-face here.
+   ──────────────────────────────────────────────────────────────────────── */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap");

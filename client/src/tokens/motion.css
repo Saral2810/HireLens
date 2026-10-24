@@ -1,0 +1,25 @@
+/* ───────────────────────────────────────────────────────────────────────
+   MOTION
+   Calm, brief, eased. No bounce. Orbs breathe slowly; UI reactions are quick.
+   ─────────────────────────────────────────────────────────────────────── */
+:root {
+  /* durations */
+  --dur-fast:   150ms;   /* hover/press color & lift */
+  --dur-base:   180ms;   /* buttons */
+  --dur-mid:    320ms;   /* theme morph, card fades */
+  --dur-theme:  320ms;   /* alias for theme switching transitions */
+  --dur-orb:    500ms;   /* orb state transitions */
+
+
+  /* easing */
+  --ease-standard: cubic-bezier(.4, 0, .2, 1);
+  --ease-out:      ease;
+  --ease-in-out:   ease-in-out;
+
+  /* signature looping motions (reference the @keyframes shipped with components) */
+  --orb-idle:    6.5s;    /* gentle vertical float */
+  --orb-sheen:   16s;     /* conic highlight rotation */
+  --orb-ring:    2.6s;    /* pulse rings while speaking */
+  --grid-breathe:14s;     /* background grid scale/opacity */
+  --status-blink:1.3s;    /* live status dot */
+}

@@ -1,0 +1,1 @@
+import '../../backend/tests/unit/credentialCrypto.test.js';

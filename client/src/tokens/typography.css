@@ -1,0 +1,42 @@
+/* ───────────────────────────────────────────────────────────────────────
+   TYPOGRAPHY
+   Two families only:
+   - --font-sans : Helvetica Neue (UI / body). Quiet, neutral, enterprise.
+   - --font-mono : IBM Plex Mono (eyebrows, badges, timers, metadata, code).
+                   Always UPPERCASE with wide tracking for labels.
+   ─────────────────────────────────────────────────────────────────────── */
+:root {
+  --font-sans: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* ── type scale (px) — UI-oriented, compact ── */
+  --text-2xs: 9.5px;   /* mono micro-labels */
+  --text-xs:  10.5px;  /* mono eyebrows */
+  --text-sm:  12.5px;  /* secondary / talk buttons */
+  --text-md:  13.5px;  /* body small, buttons */
+  --text-base:14px;    /* body */
+  --text-lg:  15px;    /* lead paragraph */
+  --text-xl:  17px;    /* card / section heading */
+  --text-2xl: 20px;    /* agent name (card) */
+  --text-3xl: 25px;    /* agent name (call) */
+  --text-4xl: 30px;    /* page headline */
+
+  /* ── weights ── */
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-semibold:600;
+
+  /* ── line heights ── */
+  --leading-tight: 1.15;   /* headlines */
+  --leading-snug:  1.45;
+  --leading-normal:1.6;    /* body */
+  --leading-relaxed:1.72;  /* summary prose */
+
+  /* ── letter spacing ── */
+  --tracking-tight:  -0.01em;  /* large headlines */
+  --tracking-normal: 0;
+  --tracking-wide:   0.012em;  /* buttons */
+  --tracking-label:  0.14em;   /* mono micro-labels */
+  --tracking-eyebrow:0.22em;   /* mono eyebrows */
+  --tracking-badge:  0.16em;   /* mono badges */
+}

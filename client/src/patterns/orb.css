@@ -1,0 +1,64 @@
+/* ───────────────────────────────────────────────────────────────────────
+   ORB — the voice orb visual.
+   A layered radial "sphere" that floats when idle, glows + pulses while the
+   agent speaks, and dims when a call ends. Six accent families.
+   Markup:
+     <div class="pd-orb orb-blue [sm] [speaking|calm]">
+       <div class="r1"></div><div class="r2"></div>
+       <div class="sphere"><div class="bA"></div><div class="bB"></div><div class="bC"></div><div class="sheen"></div></div>
+     </div>
+   ─────────────────────────────────────────────────────────────────────── */
+@keyframes pd-orb-idle  {0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes pd-orb-sheen {from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@keyframes pd-orb-ring  {0%,100%{transform:scale(.96)}50%{transform:scale(1.05)}}
+@keyframes pd-blob-a {from{transform:translate(-10%,-6%) scale(1) rotate(0)}to{transform:translate(22%,18%) scale(1.2) rotate(40deg)}}
+@keyframes pd-blob-b {from{transform:translate(8%,6%) scale(1.1)}to{transform:translate(-18%,-14%) scale(.9)}}
+@keyframes pd-blob-c {from{transform:translate(0,0) scale(.9)}to{transform:translate(-25%,30%) scale(1.15)}}
+
+.pd-orb{position:relative;width:var(--orb-lg);height:var(--orb-lg);flex:none;animation:pd-orb-idle var(--orb-idle,6.5s) ease-in-out infinite}
+.pd-orb.sm{width:var(--orb-sm);height:var(--orb-sm)}
+.pd-orb.md{width:var(--orb-md);height:var(--orb-md)}
+.pd-orb .r1{position:absolute;inset:-15px;border-radius:50%;border:1px solid var(--rc);opacity:0;animation:pd-orb-ring var(--orb-ring,2.6s) ease-in-out infinite;transition:opacity .6s ease}
+.pd-orb .r2{position:absolute;inset:-30px;border-radius:50%;border:1px solid var(--rc2);opacity:0;animation:pd-orb-ring var(--orb-ring,2.6s) ease-in-out infinite .6s;transition:opacity .6s ease}
+.pd-orb .sphere{position:relative;overflow:hidden;width:100%;height:100%;border-radius:50%;transition:box-shadow var(--dur-orb,.5s) ease,transform var(--dur-orb,.5s) ease,filter var(--dur-orb,.5s) ease}
+.pd-orb .bA{position:absolute;width:75%;height:75%;left:0;top:0;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.62),transparent 65%);filter:blur(10px);animation:pd-blob-a 7s ease-in-out infinite alternate}
+.pd-orb .bB{position:absolute;width:95%;height:95%;right:-18%;bottom:-18%;border-radius:50%;background:radial-gradient(circle,var(--oshadow),transparent 65%);filter:blur(12px);animation:pd-blob-b 9s ease-in-out infinite alternate}
+.pd-orb .bC{position:absolute;width:55%;height:55%;left:42%;top:-8%;border-radius:50%;background:radial-gradient(circle,var(--ohi),transparent 65%);filter:blur(10px);animation:pd-blob-c 11s ease-in-out infinite alternate}
+.pd-orb .sheen{position:absolute;inset:-25%;background:conic-gradient(from 0deg,transparent 0deg,rgba(255,255,255,.13) 30deg,transparent 75deg,transparent 195deg,rgba(255,255,255,.06) 230deg,transparent 270deg);animation:pd-orb-sheen var(--orb-sheen,16s) linear infinite}
+
+.orb-blue{--rc:rgba(96,165,250,.5);--rc2:rgba(96,165,250,.2);--oshadow:rgba(15,35,80,.95);--ohi:rgba(147,197,253,.75)}
+.orb-blue .sphere{background:radial-gradient(circle at 35% 30%,#BFDBFE 0%,#3B82F6 45%,#1E3A8A 80%,#0F2350 100%)}
+.orb-blue.speaking .sphere{box-shadow:0 0 80px rgba(59,130,246,.5),0 0 26px rgba(59,130,246,.45)}
+.orb-emerald{--rc:rgba(52,211,153,.5);--rc2:rgba(52,211,153,.2);--oshadow:rgba(2,56,43,.95);--ohi:rgba(110,231,183,.7)}
+.orb-emerald .sphere{background:radial-gradient(circle at 35% 30%,#A7F3D0 0%,#10B981 45%,#065F46 80%,#02382B 100%)}
+.orb-emerald.speaking .sphere{box-shadow:0 0 80px rgba(16,185,129,.55),0 0 26px rgba(16,185,129,.5)}
+.orb-violet{--rc:rgba(167,139,250,.5);--rc2:rgba(167,139,250,.2);--oshadow:rgba(46,16,101,.95);--ohi:rgba(196,181,253,.72)}
+.orb-violet .sphere{background:radial-gradient(circle at 35% 30%,#DDD6FE 0%,#8B5CF6 45%,#4C1D95 80%,#2E1065 100%)}
+.orb-violet.speaking .sphere{box-shadow:0 0 80px rgba(139,92,246,.5),0 0 26px rgba(139,92,246,.5)}
+.orb-amber{--rc:rgba(245,158,11,.5);--rc2:rgba(245,158,11,.2);--oshadow:rgba(69,26,3,.92);--ohi:rgba(253,230,138,.72)}
+.orb-amber .sphere{background:radial-gradient(circle at 35% 30%,#FDE68A 0%,#F59E0B 45%,#92400E 80%,#451A03 100%)}
+.orb-amber.speaking .sphere{box-shadow:0 0 80px rgba(245,158,11,.5),0 0 26px rgba(245,158,11,.5)}
+.orb-rose{--rc:rgba(244,114,182,.5);--rc2:rgba(244,114,182,.2);--oshadow:rgba(80,7,36,.92);--ohi:rgba(251,207,232,.72)}
+.orb-rose .sphere{background:radial-gradient(circle at 35% 30%,#FBCFE8 0%,#EC4899 45%,#9D174D 80%,#500724 100%)}
+.orb-rose.speaking .sphere{box-shadow:0 0 80px rgba(236,72,153,.5),0 0 26px rgba(236,72,153,.5)}
+.orb-cyan{--rc:rgba(34,211,238,.5);--rc2:rgba(34,211,238,.2);--oshadow:rgba(8,51,68,.92);--ohi:rgba(165,243,252,.72)}
+.orb-cyan .sphere{background:radial-gradient(circle at 35% 30%,#A5F3FC 0%,#06B6D4 45%,#155E75 80%,#083344 100%)}
+.orb-cyan.speaking .sphere{box-shadow:0 0 80px rgba(6,182,212,.5),0 0 26px rgba(6,182,212,.5)}
+
+/* light: keep spheres vivid (colored shading instead of near-black) */
+[data-pd-theme="light"] .orb-blue{--oshadow:rgba(37,99,235,.45)}
+[data-pd-theme="light"] .orb-blue .sphere{background:radial-gradient(circle at 35% 30%,#BFDBFE 0%,#3B82F6 42%,#2563EB 74%,#1D4FD0 100%)}
+[data-pd-theme="light"] .orb-emerald{--oshadow:rgba(16,185,129,.45)}
+[data-pd-theme="light"] .orb-emerald .sphere{background:radial-gradient(circle at 35% 30%,#A7F3D0 0%,#10B981 42%,#0EA372 74%,#0B8A60 100%)}
+[data-pd-theme="light"] .orb-violet{--oshadow:rgba(124,77,236,.45)}
+[data-pd-theme="light"] .orb-violet .sphere{background:radial-gradient(circle at 35% 30%,#DDD6FE 0%,#8B5CF6 42%,#7C4DEC 74%,#6A3BE0 100%)}
+[data-pd-theme="light"] .orb-amber{--oshadow:rgba(224,132,10,.45)}
+[data-pd-theme="light"] .orb-amber .sphere{background:radial-gradient(circle at 35% 30%,#FDE68A 0%,#F59E0B 42%,#E0840A 74%,#C9760A 100%)}
+[data-pd-theme="light"] .orb-rose{--oshadow:rgba(224,60,140,.45)}
+[data-pd-theme="light"] .orb-rose .sphere{background:radial-gradient(circle at 35% 30%,#FBCFE8 0%,#EC4899 42%,#E03C8C 74%,#D1327E 100%)}
+[data-pd-theme="light"] .orb-cyan{--oshadow:rgba(11,163,192,.45)}
+[data-pd-theme="light"] .orb-cyan .sphere{background:radial-gradient(circle at 35% 30%,#A5F3FC 0%,#06B6D4 42%,#0BA3C0 74%,#0C8EA8 100%)}
+
+.pd-orb.speaking .r1,.pd-orb.speaking .r2{opacity:1}
+.pd-orb.speaking .sphere{transform:scale(1.05)}
+.pd-orb.calm .sphere{transform:scale(.92);filter:saturate(.92) brightness(.92)}

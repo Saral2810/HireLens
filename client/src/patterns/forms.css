@@ -1,0 +1,96 @@
+/* ───────────────────────────────────────────────────────────────────────
+   FORMS — labels, help/error text, selects, checkbox, radio, switch,
+   segmented control, search variants, input sizes & states.
+   Builds on .pd-input / .pd-textarea from controls.css.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* field scaffolding */
+.pd-field{display:flex;flex-direction:column;gap:7px}
+.pd-label{font-family:var(--font-mono);font-size:9.5px;font-weight:500;letter-spacing:.12em;color:var(--text-label);text-transform:uppercase}
+.pd-label .opt{color:var(--text-placeholder)}
+.pd-help{font-size:12px;color:var(--text-muted)}
+.pd-error{font-size:12px;color:var(--btn-danger-fg);font-family:var(--font-mono);letter-spacing:.02em}
+.pd-input.invalid,.pd-textarea.invalid{border-color:var(--btn-danger-border)}
+.pd-input:disabled,.pd-textarea:disabled{opacity:.5;cursor:not-allowed}
+
+/* input sizes */
+.pd-input--sm{padding:8px 11px;font-size:13px;border-radius:var(--radius-sm)}
+.pd-input--lg{padding:14px 16px;font-size:15px}
+
+/* input with leading icon / affix */
+.pd-input-wrap{position:relative;display:flex;align-items:center}
+.pd-input-wrap svg{position:absolute;left:13px;width:15px;height:15px;color:var(--text-label);pointer-events:none}
+.pd-input-wrap .pd-input{padding-left:36px}
+.pd-input-affix{position:absolute;right:13px;font-family:var(--font-mono);font-size:11px;color:var(--text-label-2)}
+
+/* select */
+.pd-select{width:100%;background:var(--input-bg);border:1px solid var(--border-input);border-radius:var(--radius-md);padding:12px 38px 12px 14px;color:var(--text);font-size:var(--text-base);font-family:var(--font-sans);outline:none;cursor:pointer;appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--text-muted) 50%),linear-gradient(135deg,var(--text-muted) 50%,transparent 50%);background-position:calc(100% - 18px) 19px,calc(100% - 13px) 19px;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+.pd-select:focus{border-color:rgba(124,184,247,.5)}
+
+/* checkbox + radio */
+.pd-check{display:inline-flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--text-soft)}
+.pd-check input{position:absolute;opacity:0;width:0;height:0}
+.pd-check .box{width:18px;height:18px;border-radius:5px;border:1px solid var(--border-input);background:var(--input-bg);display:flex;align-items:center;justify-content:center;flex:none;transition:all var(--dur-fast) var(--ease-out);color:transparent}
+.pd-check input:checked + .box{background:var(--btn-primary-bg);border-color:var(--btn-primary-bg);color:var(--btn-primary-fg)}
+.pd-check .box svg{width:12px;height:12px}
+.pd-radio .box{border-radius:50%}
+.pd-radio input:checked + .box{background:var(--input-bg);border-color:var(--accent);box-shadow:inset 0 0 0 4px var(--accent)}
+
+/* switch */
+.pd-switch{position:relative;display:inline-flex;align-items:center;cursor:pointer}
+.pd-switch input{position:absolute;opacity:0;width:0;height:0}
+.pd-switch .track{width:38px;height:22px;border-radius:var(--radius-pill);background:var(--input-bg);border:1px solid var(--border-input);transition:all var(--dur-base) var(--ease-out)}
+.pd-switch .thumb{position:absolute;left:3px;width:16px;height:16px;border-radius:50%;background:var(--text-muted);transition:all var(--dur-base) var(--ease-standard)}
+.pd-switch input:checked + .track{background:var(--accent);border-color:var(--accent)}
+.pd-switch input:checked + .track + .thumb{left:19px;background:#fff}
+
+/* segmented control */
+.pd-segment{display:inline-flex;background:var(--input-bg);border:1px solid var(--border-input);border-radius:var(--radius-md);padding:3px;gap:2px}
+.pd-segment button{border:none;background:transparent;color:var(--text-muted);font-family:var(--font-sans);font-size:12.5px;font-weight:500;padding:7px 14px;border-radius:7px;cursor:pointer;transition:all var(--dur-fast) var(--ease-out)}
+.pd-segment button.active{background:var(--surface-hover);color:var(--text-heading)}
+[data-pd-theme="light"] .pd-segment button.active{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+
+/* big search (page-level) */
+.pd-search-lg{display:flex;align-items:center;gap:10px;background:var(--input-bg);border:1px solid var(--border-input);border-radius:var(--radius-md);padding:12px 16px;color:var(--text-muted);font-size:14px;transition:border-color var(--dur-fast) var(--ease-out)}
+.pd-search-lg:hover{border-color:var(--btn-secondary-border-hover)}
+.pd-search-lg svg{width:16px;height:16px;flex:none}
+.pd-search-lg input{flex:1;background:none;border:none;outline:none;color:var(--text);font-family:var(--font-sans);font-size:14px}
+.pd-search-lg kbd{font-family:var(--font-mono);font-size:10px;color:var(--text-label-2);border:1px solid var(--border-input);border-radius:5px;padding:2px 6px}
+
+/* ── hover / focus states on controls ── */
+.pd-input:hover:not(:disabled),.pd-textarea:hover:not(:disabled),.pd-select:hover{border-color:var(--btn-secondary-border-hover)}
+.pd-input:focus-visible,.pd-textarea:focus-visible,.pd-select:focus-visible{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
+.pd-check:hover .box{border-color:var(--btn-secondary-border-hover)}
+.pd-radio:hover .box{border-color:var(--accent)}
+.pd-switch:hover .track{border-color:var(--btn-secondary-border-hover)}
+.pd-switch input:focus-visible + .track{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
+.pd-segment button:hover:not(.active){color:var(--text-heading)}
+
+/* ───────────────────────────────────────────────────────────────────────
+   DROPDOWN MENU — click-to-open popover for actions or rich option lists.
+   Markup:
+     <div class="pd-dropdown" data-open>
+       <button class="pd-dropdown-trigger">Label <svg…chevron/></button>
+       <div class="pd-menu" role="menu"> … items … </div>
+     </div>
+   Toggle `data-open` on the wrapper (JS) to show the menu.
+   ─────────────────────────────────────────────────────────────────────── */
+.pd-dropdown{position:relative;display:inline-block}
+.pd-dropdown-trigger{display:inline-flex;align-items:center;justify-content:space-between;gap:9px;background:var(--input-bg);border:1px solid var(--border-input);border-radius:var(--radius-md);padding:10px 13px;color:var(--text-soft);font-family:var(--font-sans);font-size:13.5px;cursor:pointer;min-width:160px;transition:border-color var(--dur-fast) var(--ease-out)}
+.pd-dropdown-trigger:hover{border-color:var(--btn-secondary-border-hover);color:var(--text-heading)}
+.pd-dropdown-trigger .chev{width:14px;height:14px;color:var(--text-label);transition:transform var(--dur-base) var(--ease-out)}
+.pd-dropdown[data-open] .pd-dropdown-trigger{border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+.pd-dropdown[data-open] .pd-dropdown-trigger .chev{transform:rotate(180deg)}
+.pd-menu{position:absolute;z-index:60;top:calc(100% + 6px);left:0;min-width:200px;background:var(--panel);border:1px solid var(--border-strong);border-radius:var(--radius-lg);box-shadow:var(--shadow-pop);padding:6px;display:flex;flex-direction:column;gap:1px;visibility:hidden;transform:translateY(-6px) scale(.98);transform-origin:top;pointer-events:none;transition:transform var(--dur-base) var(--ease-standard),visibility 0s linear var(--dur-base)}
+.pd-menu.right{left:auto;right:0}
+.pd-dropdown[data-open] .pd-menu{visibility:visible;transform:none;pointer-events:auto;transition:transform var(--dur-base) var(--ease-standard)}
+.pd-menu-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:var(--radius-sm);color:var(--text-soft);font-size:13.5px;cursor:pointer;border:none;background:none;text-align:left;width:100%;font-family:var(--font-sans);transition:background var(--dur-fast) var(--ease-out),color var(--dur-fast) var(--ease-out)}
+.pd-menu-item svg{width:15px;height:15px;flex:none;color:var(--text-label)}
+.pd-menu-item:hover{background:var(--surface-hover);color:var(--text-heading)}
+.pd-menu-item:hover svg{color:var(--accent)}
+.pd-menu-item.active{color:var(--text-heading)}
+.pd-menu-item.active .tick{margin-left:auto;color:var(--accent)}
+.pd-menu-item.danger{color:var(--btn-danger-fg)}
+.pd-menu-item.danger:hover{background:rgba(244,63,94,.1)}
+.pd-menu-sep{height:1px;background:var(--border-soft);margin:5px 2px}
+.pd-menu-label{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;color:var(--text-label-2);padding:8px 11px 4px}
