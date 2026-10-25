@@ -61,6 +61,10 @@ export interface CandidatePortal {
   consent_given: boolean;
   has_resume: boolean;
   batch: BatchSummary | null;
+  /** Why the last call stopped (only while status is "failed"). */
+  failure_reason: string | null;
+  /** How many more times the candidate may start the call themselves after it stopped. */
+  retries_left: number;
 }
 
 export interface ResumeUploadResult {

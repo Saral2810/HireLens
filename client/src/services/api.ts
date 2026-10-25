@@ -176,6 +176,11 @@ class ApiService {
     return this.request('/api/candidate/call/recording', { method: 'POST', body: form });
   }
 
+  /** After a call that stopped part-way: lets the candidate start again (limited number of tries). */
+  async retryCall(): Promise<{ status: string; retries_left: number }> {
+    return this.request('/api/candidate/call/retry', { method: 'POST' });
+  }
+
   /** Ends the call early. keepalive lets it finish while the page is closing. */
   endCall(reason: CallEndReason): Promise<unknown> {
     return fetch('/api/candidate/call/end', {

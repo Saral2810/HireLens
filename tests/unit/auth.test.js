@@ -86,7 +86,7 @@ test('login requires email and password', async () => {
 
 test('call endpoints are candidate-only and the old spike is gone', async () => {
   const post = (path, token) => fetch(base + path, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {} });
-  for (const path of ['/api/candidate/call/start', '/api/candidate/call/turn', '/api/candidate/call/recording', '/api/candidate/call/end']) {
+  for (const path of ['/api/candidate/call/start', '/api/candidate/call/turn', '/api/candidate/call/recording', '/api/candidate/call/end', '/api/candidate/call/retry']) {
     assert.equal((await post(path)).status, 401, path);
     assert.equal((await post(path, 'test:superadmin:hr1')).status, 403, path);
     // A candidate reaches the route, which needs the database (not available in tests).
