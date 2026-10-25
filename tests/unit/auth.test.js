@@ -58,6 +58,13 @@ test('login requires email and password', async () => {
   assert.equal((await post({ email: 'x@test.local' })).status, 400);
 });
 
+test('call-loop spike endpoints are HR-only', async () => {
+  const post = (token) => fetch(base + '/api/spike/turn', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+  assert.equal((await post('test:candidate:c1')).status, 403);
+  // HR passes the role check and reaches the route, which rejects the missing audio.
+  assert.equal((await post('test:superadmin:hr1')).status, 400);
+});
+
 test('/health responds', async () => {
   const res = await get('/health');
   assert.equal(res.status, 200);
