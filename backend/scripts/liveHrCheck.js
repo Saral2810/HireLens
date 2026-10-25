@@ -5,6 +5,7 @@
 import crypto from 'crypto';
 import db from '../src/config/db.js';
 import { makeTextPdf } from './makeTextPdf.js';
+import { speak } from '../src/services/gnaniSpeech.js';
 
 const BASE = (process.argv[2] || 'http://localhost:3000').replace(/\/+$/, '');
 const tag = crypto.randomBytes(3).toString('hex');
@@ -125,7 +126,7 @@ async function run() {
     candMe.json?.role === 'candidate' && candMe.json?.candidate?.id === cand1.id && candMe.json?.candidate?.batch?.job_role === 'Backend Engineer',
     `${candMe.json?.role}, ${candMe.json?.candidate?.batch?.name}`);
   check('candidate is refused HR pages', (await api('GET', '/api/hr/batches', opened.token)).status === 403);
-  check('candidate is refused the call-loop test', (await api('POST', '/api/spike/speak', opened.token, { text: 'hi' })).status === 403);
+  check('the old call-loop test is gone', (await api('POST', '/api/spike/speak', hr.token, { text: 'hi' })).status === 404);
   check('HR is refused candidate pages', (await api('GET', '/api/candidate/me', hr.token)).status === 403);
 
   // ── Candidate: consent and resume (Phase F) ──
@@ -180,7 +181,104 @@ async function run() {
 
   const malformed = await api('GET', '/api/hr/batches/not-a-uuid', hr.token);
   check('malformed id is a clean 404', malformed.status === 404);
+
+  await screeningCall(opened.token, cand1.id);
 }
+
+// ── Screening call (Phase G) ──
+// Answers are spoken by Timbre as 16 kHz WAV and sent like the browser does, so this uses a few
+// Prisma, Timbre and LLM credits (about 12 turns).
+
+/** A made-up spoken answer that fits the question. */
+function answerFor(q) {
+  const text = q.question_text.toLowerCase();
+  if (q.source === 'intro') return 'Haan, main ready hoon.';
+  if (q.answer_type === 'duration') return 'Mera notice period do mahine ka hai.';
+  if (q.answer_type === 'ctc') return text.includes('expected') ? 'Meri expected CTC baarah lakh hai.' : 'Meri current CTC nau lakh hai.';
+  if (q.answer_type === 'yes_no') return 'Haan, bilkul kar sakta hoon.';
+  if (text.includes('city')) return 'Main Pune mein hoon, aur Bangalore relocate kar sakta hoon.';
+  if (text.includes('join')) return 'Notice period ke baad, lagbhag do mahine mein join kar sakta hoon.';
+  return 'Maine Java aur Spring Boot mein shipment tracking API banaya tha, jo chaalis warehouses use karte the.';
+}
+
+async function sendTurn(token, wav) {
+  const form = new FormData();
+  if (wav) form.append('audio', new Blob([wav], { type: 'audio/wav' }), 'answer.wav');
+  else form.append('no_speech', '1');
+  const res = await fetch(`${BASE}/api/candidate/call/turn`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
+  return { status: res.status, json: await res.json().catch(() => null) };
+}
+
+async function screeningCall(token, candidateId) {
+  const say = async (text) => (await speak(text, { container: 'wav', sampleRate: 16000 })).audio;
+
+  // Not ready → the call ends politely and the candidate can start again.
+  const first = await api('POST', '/api/candidate/call/start', token);
+  check('call starts with intro and first question as audio',
+    first.status === 200 && first.json?.lines?.length === 2 && first.json.lines.every(l => l.audio_base64?.length > 1000),
+    `${first.json?.total_questions} questions`);
+  check('a second start while in a call is refused', (await api('POST', '/api/candidate/call/start', token)).status === 409);
+  const notReady = await sendTurn(token, await say('Nahi, abhi main busy hoon, baad mein baat karte hain.'));
+  check('"not ready" ends the call politely', notReady.json?.done === true && notReady.json.outcome === 'not_ready', notReady.json?.heard);
+  const back = await api('GET', '/api/candidate/me', token);
+  check('candidate can start again after "not ready"', back.json?.status === 'resume_uploaded');
+
+  // The real call.
+  const start = await api('POST', '/api/candidate/call/start', token);
+  check('second call starts', start.status === 200, start.json?.message);
+  const callId = start.json?.call_id;
+  const { data: call } = await db.supabase.from('calls').select('question_plan').eq('id', callId).single();
+  const plan = call.question_plan.questions;
+
+  let position = start.json.position;
+  let triedSilence = false;
+  let turns = 0;
+  const gaps = [];
+  let last = null;
+  while (turns < 30) {
+    turns += 1;
+    const q = plan.find(p => p.position === position);
+    // Once, send silence on a resume question to check the repeat path.
+    const silent = !triedSilence && q.source === 'resume';
+    if (silent) triedSilence = true;
+    last = await sendTurn(token, silent ? null : await say(answerFor(q)));
+    if (last.status !== 200) break;
+    gaps.push(last.json.timings.total_ms);
+    if (silent) check('silence gets the question repeated', last.json.decision === 'repeat' && last.json.position === position, last.json.lines?.[0]?.text);
+    console.log(`      [${q.source}/${q.answer_type}] heard "${last.json.heard}" → ${last.json.decision} (${last.json.timings.total_ms} ms)`);
+    if (last.json.done) break;
+    position = last.json.position;
+  }
+  check('call reaches the closing line', last?.json?.done === true && last.json.outcome === 'completed', last?.json?.message);
+  console.log(`      server time per turn: avg ${Math.round(gaps.reduce((a, b) => a + b, 0) / (gaps.length || 1))} ms, max ${Math.max(...gaps)} ms`);
+  check('a turn after the call is refused', (await sendTurn(token, null)).status === 409);
+
+  const recording = await fetch(`${BASE}/api/candidate/call/recording`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+    body: (() => { const f = new FormData(); f.append('recording', new Blob([Buffer.alloc(4096, 1)], { type: 'audio/webm;codecs=opus' }), 'call.webm'); return f; })()
+  });
+  check('recording uploaded after the call', recording.status === 200);
+
+  // Summary is written in the background.
+  let saved = null;
+  for (let i = 0; i < 20; i += 1) {
+    ({ data: saved } = await db.supabase.from('calls').select('*').eq('id', callId).single());
+    if (saved?.summary) break;
+    await new Promise(r => setTimeout(r, 500));
+  }
+  const { data: answers } = await db.supabase.from('answers').select('*').eq('call_id', callId).order('position');
+  const { data: cand } = await db.supabase.from('candidates').select('status').eq('id', candidateId).single();
+  check('database: call completed with transcript and recording',
+    saved?.status === 'completed' && !!saved.ended_at && saved.transcript.length >= plan.length * 2 && saved.recording_path?.endsWith('.webm'));
+  check('database: one answer row per question', answers?.length === plan.length, `${answers?.length} of ${plan.length}`);
+  const byType = (type) => answers.filter(a => a.answer_type === type).map(a => a.extracted_value);
+  check('notice period extracted as 60 days', byType('duration').some(v => v?.days === 60), JSON.stringify(byType('duration')));
+  check('CTC extracted as 9 and 12 LPA', JSON.stringify(byType('ctc').map(v => v?.lpa).sort((a, b) => a - b)) === '[9,12]', JSON.stringify(byType('ctc')));
+  check('candidate marked completed', cand?.status === 'completed');
+  check('summary and fit score written', !!saved?.summary && Number.isInteger(saved.fit_score), `${saved?.fit_score}: ${saved?.summary}`);
+  check('a second start after completion is refused', (await api('POST', '/api/candidate/call/start', token)).status === 409);
+}
+
 
 async function cleanup() {
   if (batchId) {

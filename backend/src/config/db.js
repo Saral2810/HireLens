@@ -207,6 +207,65 @@ const db = {
 
   async deleteCandidate(candidateId) {
     unwrap(await requireClient().from('candidates').delete().eq('id', candidateId));
+  },
+
+  /** Updates the candidate only while it still has `fromStatus` (guards against two tabs racing). @returns row or null */
+  async updateCandidateIfStatus(candidateId, fromStatus, fields) {
+    const rows = unwrap(await requireClient().from('candidates').update(fields).eq('id', candidateId).eq('status', fromStatus).select('id, status'));
+    return rows?.[0] || null;
+  },
+
+  // ── Calls and answers (Phase G) ──
+
+  async createCall({ candidateId, questionPlan }) {
+    return unwrap(await requireClient()
+      .from('calls')
+      .insert({ candidate_id: candidateId, status: 'in_progress', question_plan: questionPlan, transcript: [] })
+      .select('*')
+      .single());
+  },
+
+  async getCall(callId) {
+    return unwrap(await requireClient().from('calls').select('*').eq('id', callId).maybeSingle());
+  },
+
+  /** The candidate's newest call, or null. */
+  async getLatestCallForCandidate(candidateId) {
+    const rows = unwrap(await requireClient()
+      .from('calls')
+      .select('*')
+      .eq('candidate_id', candidateId)
+      .order('started_at', { ascending: false })
+      .limit(1));
+    return rows?.[0] || null;
+  },
+
+  async getActiveCallForCandidate(candidateId) {
+    const rows = unwrap(await requireClient()
+      .from('calls')
+      .select('*')
+      .eq('candidate_id', candidateId)
+      .eq('status', 'in_progress')
+      .order('started_at', { ascending: false })
+      .limit(1));
+    return rows?.[0] || null;
+  },
+
+  async updateCall(callId, fields) {
+    return unwrap(await requireClient().from('calls').update(fields).eq('id', callId).select('*').single());
+  },
+
+  /** Saves the answer for one plan position (a later save for the same position replaces it). */
+  async upsertAnswer(callId, answer) {
+    return unwrap(await requireClient()
+      .from('answers')
+      .upsert({ call_id: callId, ...answer }, { onConflict: 'call_id,position' })
+      .select('*')
+      .single());
+  },
+
+  async listAnswers(callId) {
+    return unwrap(await requireClient().from('answers').select('*').eq('call_id', callId).order('position'));
   }
 };
 

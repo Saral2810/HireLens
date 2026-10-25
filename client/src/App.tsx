@@ -6,7 +6,6 @@ import { AppHeader } from './components/layout/AppHeader';
 import { InviteRequiredPage } from './pages/InviteRequiredPage';
 import { BatchesPage } from './pages/hr/BatchesPage';
 import { BatchDetailPage } from './pages/hr/BatchDetailPage';
-import { CallSpikePage } from './pages/CallSpikePage';
 import { CandidateHomePage } from './pages/candidate/CandidateHomePage';
 
 // Two portals: HR (super-admin) under /hr, candidates under /candidate.
@@ -38,8 +37,6 @@ export const App: React.FC = () => {
             <>
               <Route path="/hr" element={<BatchesPage />} />
               <Route path="/hr/batches/:batchId" element={<BatchDetailPage />} />
-              {/* Temporary call-loop test (Phase B), removed in Phase G. */}
-              <Route path="/hr/call-test" element={<CallSpikePage />} />
             </>
           )}
           {currentUser.role === 'candidate' && <Route path="/candidate/*" element={<CandidateHomePage />} />}

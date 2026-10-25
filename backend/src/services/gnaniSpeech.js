@@ -30,6 +30,19 @@ export class SpeechError extends Error {
   }
 }
 
+// Gnani allows one active request per API key at a time (Timbre answers 429 RATE_LIMITED otherwise),
+// so each service runs its requests one after another, shared by every call on this server.
+function serialQueue() {
+  let tail = Promise.resolve();
+  return (task) => {
+    const run = tail.then(task, task);
+    tail = run.catch(() => {});
+    return run;
+  };
+}
+const prismaQueue = serialQueue();
+const timbreQueue = serialQueue();
+
 function apiKey() {
   const key = (process.env.GNANI_SPEECH_API_KEY || '').trim();
   if (!key) throw new SpeechError('GNANI_SPEECH_API_KEY is not set in .env.', 503);
@@ -46,7 +59,11 @@ export function isSpeechConfigured() {
  * @param {{ format?: keyof STT_CONTENT_TYPES, language?: string, callId?: string }} [opts]
  * @returns {Promise<{ transcript: string, requestId: string|null, ms: number }>}
  */
-export async function transcribe(audio, { format = 'wav', language, callId } = {}) {
+export function transcribe(audio, opts = {}) {
+  return prismaQueue(() => transcribeNow(audio, opts));
+}
+
+async function transcribeNow(audio, { format = 'wav', language, callId } = {}) {
   const contentType = STT_CONTENT_TYPES[format];
   if (!contentType) throw new SpeechError(`Prisma does not accept "${format}" audio.`, 400);
 
@@ -88,7 +105,11 @@ export async function transcribe(audio, { format = 'wav', language, callId } = {
  * @param {{ container?: 'mp3'|'wav'|'ogg', sampleRate?: number, callId?: string }} [opts]
  * @returns {Promise<{ audio: Buffer, contentType: string, ms: number }>}
  */
-export async function speak(text, { container = 'mp3', sampleRate = 24000, callId } = {}) {
+export function speak(text, opts = {}) {
+  return timbreQueue(() => speakNow(text, opts));
+}
+
+async function speakNow(text, { container = 'mp3', sampleRate = 24000, callId } = {}) {
   if (!text || !text.trim()) throw new SpeechError('Nothing to speak.', 400);
   const voice = (process.env.GNANI_TTS_VOICE || '').trim();
   if (!voice) throw new SpeechError('GNANI_TTS_VOICE is not set in .env.', 503);
@@ -134,4 +155,42 @@ export async function speak(text, { container = 'mp3', sampleRate = 24000, callI
       duration_ms: Date.now() - started, error: failure
     }).catch(() => {});
   }
+}
+
+// ── Audio cache (roadmap G.3) ──
+// The same lines (HR questions, repeat prompts) are spoken in every call of a batch. Keeping their
+// audio in memory saves Timbre credits and ~0.5 s per line. Lost on restart, which is fine.
+const AUDIO_CACHE_MAX = 300;
+const audioCache = new Map();
+
+function cacheKey(text, container, sampleRate) {
+  return [
+    process.env.GNANI_TTS_VOICE || '', process.env.GNANI_TTS_MODEL || 'timbre-v2.5', process.env.GNANI_TTS_LANGUAGE || 'auto',
+    container, sampleRate, text.trim()
+  ].join('|');
+}
+
+/**
+ * speak() with an in-memory cache. Same arguments and result, plus `cached`.
+ * @param {string} text
+ * @param {{ container?: 'mp3'|'wav'|'ogg', sampleRate?: number, callId?: string }} [opts]
+ * @param {{ speakFn?: typeof speak }} [deps]
+ */
+export async function speakCached(text, opts = {}, { speakFn = speak } = {}) {
+  const key = cacheKey(String(text || ''), opts.container || 'mp3', opts.sampleRate || 24000);
+  const hit = audioCache.get(key);
+  if (hit) {
+    // Move to the end so the oldest unused line is dropped first.
+    audioCache.delete(key);
+    audioCache.set(key, hit);
+    return { ...hit, ms: 0, cached: true };
+  }
+  const voice = await speakFn(text, opts);
+  audioCache.set(key, { audio: voice.audio, contentType: voice.contentType });
+  if (audioCache.size > AUDIO_CACHE_MAX) audioCache.delete(audioCache.keys().next().value);
+  return { ...voice, cached: false };
+}
+
+export function clearAudioCache() {
+  audioCache.clear();
 }

@@ -73,11 +73,15 @@ test('login requires email and password', async () => {
   assert.equal((await post({ email: 'x@test.local' })).status, 400);
 });
 
-test('call-loop spike endpoints are HR-only', async () => {
-  const post = (token) => fetch(base + '/api/spike/turn', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
-  assert.equal((await post('test:candidate:c1')).status, 403);
-  // HR passes the role check and reaches the route, which rejects the missing audio.
-  assert.equal((await post('test:superadmin:hr1')).status, 400);
+test('call endpoints are candidate-only and the old spike is gone', async () => {
+  const post = (path, token) => fetch(base + path, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  for (const path of ['/api/candidate/call/start', '/api/candidate/call/turn', '/api/candidate/call/recording', '/api/candidate/call/end']) {
+    assert.equal((await post(path)).status, 401, path);
+    assert.equal((await post(path, 'test:superadmin:hr1')).status, 403, path);
+    // A candidate reaches the route, which needs the database (not available in tests).
+    assert.equal((await post(path, 'test:candidate:c1')).status, 503, path);
+  }
+  assert.equal((await post('/api/spike/turn', 'test:superadmin:hr1')).status, 404);
 });
 
 test('candidate endpoints are candidate-only', async () => {

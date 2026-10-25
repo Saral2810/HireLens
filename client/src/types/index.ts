@@ -85,3 +85,30 @@ export interface User {
     batch: BatchSummary | null;
   } | null;
 }
+
+/** One thing the agent says, with its audio (base64). */
+export interface CallLine {
+  text: string;
+  audio_base64: string;
+  audio_type: string;
+}
+
+export interface CallStartResult {
+  call_id: string;
+  total_questions: number;
+  position: number;
+  lines: CallLine[];
+  done: false;
+}
+
+export interface CallTurnResult {
+  position: number;
+  lines: CallLine[];
+  done: boolean;
+  outcome?: 'completed' | 'not_ready';
+  heard: string;
+  decision: 'next' | 'repeat' | 'skip';
+  timings: { stt_ms: number; brain_ms: number; tts_ms: number; total_ms: number };
+}
+
+export type CallEndReason = 'ended_by_candidate' | 'left_page' | 'client_error';

@@ -9,7 +9,7 @@ import db from './config/db.js';
 import authRouter from './routes/auth.js';
 import hrRouter from './routes/hr.js';
 import candidateRouter from './routes/candidate.js';
-import spikeRouter from './routes/spike.js';
+import callRouter from './routes/call.js';
 
 dotenv.config();
 
@@ -39,10 +39,9 @@ if (fs.existsSync(frontendPath)) {
 
 app.use('/api/auth', authRouter);
 app.use('/api/hr', requireAuth, requireRole('superadmin'), hrRouter);
+// The call router is mounted first so its multer limits apply to call audio.
+app.use('/api/candidate/call', requireAuth, requireRole('candidate'), callRouter);
 app.use('/api/candidate', requireAuth, requireRole('candidate'), candidateRouter);
-
-// Temporary call-loop test endpoints (roadmap Phase B), HR only.
-app.use('/api/spike', requireAuth, requireRole('superadmin'), spikeRouter);
 
 app.get('/health', (req, res) => {
   res.json({
