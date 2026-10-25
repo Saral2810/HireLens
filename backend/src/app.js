@@ -4,8 +4,9 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { requireAuth, resolveRole } from './middleware/auth.js';
+import { requireAuth, requireRole, resolveRole } from './middleware/auth.js';
 import db, { createAuthClient } from './config/db.js';
+import spikeRouter from './routes/spike.js';
 
 dotenv.config();
 
@@ -71,6 +72,9 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ id: req.user.id, email: req.user.email, role: req.user.role });
 });
+
+// Temporary call-loop test endpoints (roadmap Phase B), HR only.
+app.use('/api/spike', requireAuth, requireRole('superadmin'), spikeRouter);
 
 app.get('/health', (req, res) => {
   res.json({

@@ -10,6 +10,8 @@ dotenv.config();
  *   LLM_API_KEY   your key
  *   LLM_MODEL     model name (sent in the request body; optional for Azure deployments)
  *   LLM_AUTH_HEADER  'bearer' (default -> "Authorization: Bearer <key>") or 'api-key' (Azure style)
+ *   LLM_REASONING_EFFORT  optional: low | medium | high, for reasoning models (e.g. gpt-oss on Groq).
+ *                         Leave blank for models that don't accept it (Evon disables thinking server-side).
  *
  * The screening prompts that use this slot are added in roadmap Phases B, F and G.
  */
@@ -31,7 +33,10 @@ export async function callLLM(bodyPayload) {
   const headers = { 'Content-Type': 'application/json' };
   if (authStyle === 'api-key') headers['api-key'] = key;
   else headers['Authorization'] = `Bearer ${key}`;
-  const payload = model ? { ...bodyPayload, model } : bodyPayload;
+  const reasoningEffort = (process.env.LLM_REASONING_EFFORT || '').trim();
+  const payload = { ...bodyPayload };
+  if (model) payload.model = model;
+  if (reasoningEffort && payload.reasoning_effort === undefined) payload.reasoning_effort = reasoningEffort;
   try {
     const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
     if (response.ok) return response;

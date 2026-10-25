@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { LogOut } from 'lucide-react';
 import { useAppStore } from './store/useAppStore';
 import { LoginModal } from './components/auth/LoginModal';
+import { CallSpikePage } from './pages/CallSpikePage';
 
 // Phase A shell. The HR portal (batches, questions, results) and the candidate portal
 // (resume upload, mic check, call) replace the placeholder in roadmap Phases D–H.
@@ -31,10 +32,14 @@ export const App: React.FC = () => {
       </header>
 
       <main className="lx-main" style={{ padding: 24, color: 'var(--lx-text)' }}>
-        <h2 style={{ marginTop: 0 }}>Signed in as {roleLabel}</h2>
-        <p style={{ color: 'var(--lx-muted)' }}>
-          The {currentUser.role === 'superadmin' ? 'HR portal (batches, questions, results)' : 'candidate portal (resume upload, mic check, screening call)'} is being built.
-        </p>
+        {currentUser.role === 'superadmin' ? (
+          <CallSpikePage />
+        ) : (
+          <>
+            <h2 style={{ marginTop: 0 }}>Signed in as {roleLabel}</h2>
+            <p style={{ color: 'var(--lx-muted)' }}>The candidate portal (resume upload, mic check, screening call) is being built.</p>
+          </>
+        )}
       </main>
     </div>
   );
