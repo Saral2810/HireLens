@@ -1,27 +1,36 @@
 import React from 'react';
-import { CandidateStatus } from '../../types';
+import { CampaignStatus, CandidateStatus } from '../../types';
 
 export const STATUS_LABELS: Record<CandidateStatus, string> = {
-  invited: 'Invited',
+  invited: 'Added',
   resume_uploaded: 'Ready for call',
   in_call: 'In call',
   completed: 'Completed',
   failed: 'Did not finish'
 };
 
-const STATUS_TONES: Record<CandidateStatus, string> = {
-  invited: 'grey',
-  resume_uploaded: 'blue',
-  in_call: 'amber',
-  completed: 'green',
-  failed: 'red'
+// Black and white only: fill, outline weight and dashes tell statuses apart.
+const STATUS_STYLE: Record<CandidateStatus, string> = {
+  invited: 'badge-faint',
+  resume_uploaded: 'badge-strong',
+  in_call: 'badge-strong badge-live',
+  completed: 'badge-solid',
+  failed: 'badge-dashed'
 };
 
 export const StatusBadge: React.FC<{ status: CandidateStatus }> = ({ status }) => (
-  <span className={`badge badge-${STATUS_TONES[status]}`}>{STATUS_LABELS[status]}</span>
+  <span className={`badge ${STATUS_STYLE[status]}`}>{STATUS_LABELS[status]}</span>
 );
 
-/** Fit score as a coloured pill (green ≥ 70, amber ≥ 40, red below). */
+export const CAMPAIGN_LABELS: Record<CampaignStatus, string> = { draft: 'Draft', live: 'Live', closed: 'Closed' };
+
+export const CampaignBadge: React.FC<{ status: CampaignStatus }> = ({ status }) => (
+  <span className={`badge ${status === 'live' ? 'badge-solid badge-live' : status === 'closed' ? 'badge-dashed' : 'badge-faint'}`}>
+    {CAMPAIGN_LABELS[status]}
+  </span>
+);
+
+/** Fit score: filled ≥ 70, outlined ≥ 40, dashed below. */
 export const ScorePill: React.FC<{ score: number | null | undefined }> = ({ score }) => {
   if (score === null || score === undefined) return <span className="score score-none">—</span>;
   const tone = score >= 70 ? 'high' : score >= 40 ? 'mid' : 'low';

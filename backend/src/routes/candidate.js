@@ -17,9 +17,11 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX
 const EDITABLE_STATUSES = ['invited', 'resume_uploaded'];
 
 async function loadOwnCandidate(req, res) {
-  const candidate = await db.getCandidateForUser(req.user.id);
+  let candidate = await db.getCandidateForUser(req.user.id);
+  // First visit after Google / email-code sign-in: link the rows HR added for this email.
+  if (!candidate && await db.claimCandidatesByEmail(req.user.id, req.user.email)) candidate = await db.getCandidateForUser(req.user.id);
   if (!candidate) {
-    res.status(404).json({ error: 'Not Found', message: 'No screening invitation found for this account.' });
+    res.status(404).json({ error: 'Not Found', message: 'No screening found for this email. Check with HR that they added this exact address and ran the campaign.' });
     return null;
   }
   return candidate;
@@ -36,10 +38,18 @@ function publicView(candidate, retries = 0) {
     has_resume: !!candidate.resume_path,
     batch: candidate.batch && {
       id: candidate.batch.id, name: candidate.batch.name, batch_date: candidate.batch.batch_date,
-      job_role: candidate.batch.job_role, company_name: candidate.batch.company_name
+      job_role: candidate.batch.job_role, company_name: candidate.batch.company_name, status: candidate.batch.status
     }
   };
 }
+
+/** GET /api/candidate/screenings → every screening of this candidate (dashboard history). */
+router.get('/screenings', async (req, res, next) => {
+  try {
+    await db.claimCandidatesByEmail(req.user.id, req.user.email);
+    res.json(await db.listScreeningsForUser(req.user.id));
+  } catch (err) { next(err); }
+});
 
 /** GET /api/candidate/me → own record, batch and progress (questions stay hidden until the call). */
 router.get('/me', async (req, res, next) => {
@@ -64,6 +74,9 @@ router.post('/resume', upload.single('resume'), async (req, res, next) => {
     if (!candidate) return;
     if (!EDITABLE_STATUSES.includes(candidate.status)) {
       return res.status(409).json({ error: 'Conflict', message: 'Your screening call has already started, so the resume can no longer be changed.' });
+    }
+    if (candidate.batch?.status !== 'live') {
+      return res.status(409).json({ error: 'Conflict', message: 'This campaign is closed. Please contact the HR team.' });
     }
     if (!req.file?.buffer?.length) {
       return res.status(400).json({ error: 'Bad Request', message: 'Choose a PDF resume to upload.' });

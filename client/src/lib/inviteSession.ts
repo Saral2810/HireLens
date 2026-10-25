@@ -1,4 +1,4 @@
-// Candidate invite links go through Supabase Auth, which sends the browser back to the app with
+// Sign-in links (Google, email links, HR test links) go through Supabase Auth, which sends the browser back to the app with
 // the session in the URL fragment: #access_token=...&refresh_token=...&type=magiclink
 // (or #error=...&error_description=... when the link was already used or has expired).
 
@@ -24,7 +24,7 @@ export function consumeInviteFragment(): InviteResult {
   return {
     kind: 'error',
     message: expired
-      ? 'This invite link has already been used or has expired. Ask HR for a new link.'
+      ? 'This sign-in link has already been used or has expired. Sign in again below.'
       : `Sign-in failed: ${error}`
   };
 }

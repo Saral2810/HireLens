@@ -1,4 +1,8 @@
-export type Role = 'superadmin' | 'candidate';
+/** superadmin is shown as Admin. Admin and Recruiter are the HR team. */
+export type Role = 'superadmin' | 'recruiter' | 'candidate';
+export const isHrRole = (role?: Role | null) => role === 'superadmin' || role === 'recruiter';
+
+export type CampaignStatus = 'draft' | 'live' | 'closed';
 
 export type CandidateStatus = 'invited' | 'resume_uploaded' | 'in_call' | 'completed' | 'failed';
 
@@ -8,6 +12,7 @@ export interface BatchSummary {
   batch_date: string;
   job_role: string;
   company_name: string | null;
+  status?: CampaignStatus;
 }
 
 export type AnswerType = 'text' | 'number' | 'yes_no' | 'ctc' | 'duration';
@@ -16,6 +21,9 @@ export type StatusCounts = Record<CandidateStatus, number> & { total: number };
 
 export interface Batch extends BatchSummary {
   job_description: string | null;
+  created_by?: string | null;
+  launched_at?: string | null;
+  closed_at?: string | null;
   created_at: string;
   updated_at: string;
   counts?: StatusCounts;
@@ -177,4 +185,49 @@ export interface CallDetail extends ResultRow {
   recording_url: string | null;
   resume_url: string | null;
   links_expire_in_seconds: number;
+}
+
+
+// ── Dashboard and team (UI rebuild) ──
+
+export interface AnalyticsCall {
+  call_id: string;
+  candidate_id: string;
+  name: string;
+  campaign: string;
+  campaign_id: string | null;
+  status: 'in_progress' | 'completed' | 'failed';
+  fit_score: number | null;
+  ended_at: string | null;
+}
+
+export interface Analytics {
+  campaigns: { total: number; draft: number; live: number; closed: number };
+  candidates: { total: number; by_status: Record<CandidateStatus, number> };
+  calls: { completed: number; failed: number; in_progress: number };
+  completion_rate: number | null;
+  avg_fit_score: number | null;
+  avg_call_seconds: number | null;
+  funnel: { stage: string; count: number }[];
+  per_day: { day: string; completed: number; failed: number }[];
+  score_distribution: { label: string; count: number }[];
+  top_candidates: AnalyticsCall[];
+  recent_calls: AnalyticsCall[];
+}
+
+export interface StaffMember {
+  id: string;
+  name: string | null;
+  email: string;
+  role: 'superadmin' | 'recruiter';
+  created_at: string;
+  campaigns: number;
+  is_you?: boolean;
+}
+
+export interface Screening {
+  id: string;
+  status: CandidateStatus;
+  created_at: string;
+  batch: { id: string; name: string; job_role: string; company_name: string | null; status: CampaignStatus };
 }

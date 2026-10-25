@@ -91,6 +91,8 @@ async function run() {
   const emails = [1, 2, 3].map(n => `e2e-cand${n}-${tag}@example.com`);
   const added = await api('POST', `/api/hr/batches/${batchId}/candidates`, hr.token, { candidates: emails.map((email, i) => ({ name: `Test Candidate ${i + 1}`, email })) });
   check('3 candidates added', added.json?.added === 3);
+  const ran = await api('POST', `/api/hr/batches/${batchId}/run`, hr.token);
+  check('campaign runs (draft → live)', ran.json?.status === 'live');
   const dup = await api('POST', `/api/hr/batches/${batchId}/candidates`, hr.token, { candidates: [{ name: 'Again', email: emails[0] }] });
   check('existing email is skipped', dup.json?.added === 0 && dup.json?.skipped_existing === 1);
 
@@ -262,7 +264,7 @@ async function screeningCall(token, candidateId) {
 
   // Summary is written in the background.
   let saved = null;
-  for (let i = 0; i < 20; i += 1) {
+  for (let i = 0; i < 40; i += 1) { // up to 20 s: the summary may be retried once after 5 s
     ({ data: saved } = await db.supabase.from('calls').select('*').eq('id', callId).single());
     if (saved?.summary) break;
     await new Promise(r => setTimeout(r, 500));

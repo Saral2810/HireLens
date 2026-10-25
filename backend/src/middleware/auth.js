@@ -1,6 +1,9 @@
 import db from '../config/db.js';
 
-export const ROLES = Object.freeze({ SUPERADMIN: 'superadmin', CANDIDATE: 'candidate' });
+// superadmin is shown as "Admin" in the app. Admin and Recruiter together are the HR team.
+export const ROLES = Object.freeze({ SUPERADMIN: 'superadmin', RECRUITER: 'recruiter', CANDIDATE: 'candidate' });
+export const HR_ROLES = Object.freeze([ROLES.SUPERADMIN, ROLES.RECRUITER]);
+export const isHr = (role) => HR_ROLES.includes(role);
 
 // Roles come from the profiles table (one row per auth user, see database/README.md).
 // Cached briefly so every request does not hit the database.
@@ -10,15 +13,20 @@ const roleCache = new Map();
 /**
  * Role of a signed-in user. Users without a profile row are treated as candidates.
  * @param {string} userId
- * @returns {Promise<'superadmin'|'candidate'>}
+ * @returns {Promise<'superadmin'|'recruiter'|'candidate'>}
  */
 export async function getRole(userId) {
   const cached = roleCache.get(userId);
   if (cached && cached.expires > Date.now()) return cached.role;
   const profile = await db.getProfile(userId);
-  const role = profile?.role === ROLES.SUPERADMIN ? ROLES.SUPERADMIN : ROLES.CANDIDATE;
+  const role = HR_ROLES.includes(profile?.role) ? profile.role : ROLES.CANDIDATE;
   roleCache.set(userId, { role, expires: Date.now() + ROLE_CACHE_MS });
   return role;
+}
+
+/** Forget a cached role (after the Team page changes it). */
+export function clearRoleCache(userId) {
+  roleCache.delete(userId);
 }
 
 // Tests run without Supabase. They authenticate with "Bearer test:<role>:<userId>[:<email>]".
@@ -65,7 +73,7 @@ export async function requireAuth(req, res, next) {
 
 /**
  * Allows the request only for the given roles. Use after requireAuth.
- * @param {...('superadmin'|'candidate')} roles
+ * @param {...('superadmin'|'recruiter'|'candidate')} roles
  */
 export function requireRole(...roles) {
   return (req, res, next) => {

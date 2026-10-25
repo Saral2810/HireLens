@@ -38,7 +38,7 @@ if (fs.existsSync(frontendPath)) {
 }
 
 app.use('/api/auth', authRouter);
-app.use('/api/hr', requireAuth, requireRole('superadmin'), hrRouter);
+app.use('/api/hr', requireAuth, requireRole('superadmin', 'recruiter'), hrRouter);
 // The call router is mounted first so its multer limits apply to call audio.
 app.use('/api/candidate/call', requireAuth, requireRole('candidate'), callRouter);
 app.use('/api/candidate', requireAuth, requireRole('candidate'), candidateRouter);

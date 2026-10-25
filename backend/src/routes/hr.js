@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import db from '../config/db.js';
-import { ROLES } from '../middleware/auth.js';
+import multer from 'multer';
+import { ROLES, HR_ROLES, clearRoleCache } from '../middleware/auth.js';
+import { computeAnalytics } from '../services/analytics.js';
+import { cellText, parseCsvTable, rowsFromTable } from '../services/spreadsheet.js';
 import ExcelJS from 'exceljs';
 import { DEFAULT_HR_QUESTIONS } from '../services/questionTemplates.js';
 import { buildResultRows, exportTable, toCsv } from '../services/results.js';
@@ -9,7 +12,8 @@ import {
 } from '../utils/validation.js';
 
 /**
- * HR (super-admin) API. Mounted at /api/hr behind requireAuth + requireRole('superadmin').
+ * HR API. Mounted at /api/hr behind requireAuth + requireRole('superadmin', 'recruiter').
+ * Admin (superadmin) reaches every campaign; a recruiter only their own (see canManage below).
  * Phase D: invite links. Phase E: batches, questions, candidates. Phase H: results, export, retakes.
  */
 const router = Router();
@@ -21,6 +25,43 @@ router.param('id', (req, res, next, id) => (UUID_RE.test(id) ? next() : notFound
 
 const badRequest = (res, errors) => res.status(400).json({ error: 'Bad Request', message: errors.join(' '), errors });
 const notFound = (res, what) => res.status(404).json({ error: 'Not Found', message: `${what} not found.` });
+
+// ── Who can reach what (RBAC) ─────────────────────────────────────────────
+// Admin (superadmin) reaches every campaign; a recruiter only the campaigns they created.
+// Anything outside the user's reach answers 404, so ids of other people's campaigns are not confirmed.
+
+export function canManage(user, batch) {
+  return !!batch && (user?.role === ROLES.SUPERADMIN || batch.created_by === user?.id);
+}
+
+const adminOnly = (req, res, next) => (req.user?.role === ROLES.SUPERADMIN
+  ? next()
+  : res.status(403).json({ error: 'Forbidden', message: 'Only an Admin can do this.' }));
+
+function guard(load, what) {
+  return async (req, res, next) => {
+    try {
+      const batch = await load(req.params.id);
+      if (!canManage(req.user, batch)) return notFound(res, what);
+      next();
+    } catch (err) { next(err); }
+  };
+}
+
+router.use('/batches/:id', guard(id => db.getBatch(id), 'Campaign'));
+router.use('/questions/:id', guard(async id => {
+  const q = await db.getQuestion(id);
+  return q && db.getBatch(q.batch_id);
+}, 'Question'));
+router.use('/candidates/:id', guard(async id => {
+  const c = await db.getCandidate(id);
+  return c && db.getBatch(c.batch_id);
+}, 'Candidate'));
+router.use('/calls/:id', guard(async id => {
+  const call = await db.getCall(id);
+  const c = call && await db.getCandidate(call.candidate_id);
+  return c && db.getBatch(c.batch_id);
+}, 'Call'));
 
 /** Where invite links land. PUBLIC_APP_URL wins; otherwise the address HR is using. */
 function appUrl(req) {
@@ -59,7 +100,7 @@ async function createInviteLink(candidate, req) {
 
 router.get('/batches', async (req, res, next) => {
   try {
-    res.json(await db.listBatches());
+    res.json(await db.listBatches(req.user.role === ROLES.SUPERADMIN ? {} : { ownerId: req.user.id }));
   } catch (err) { next(err); }
 });
 
@@ -321,6 +362,144 @@ router.get('/batches/:id/export', async (req, res, next) => {
     res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(Buffer.from(await book.xlsx.writeBuffer()));
   } catch (err) { next(err); }
+});
+
+
+// ── Campaign lifecycle (UI rebuild) ───────────────────────────────────────
+
+/** POST /api/hr/batches/:id/run → campaign live: candidates can sign in and take the call. */
+router.post('/batches/:id/run', async (req, res, next) => {
+  try {
+    const batch = await db.getBatch(req.params.id);
+    if (batch.status === 'live') return res.json(batch);
+    if (!(await db.countCandidates(batch.id))) return badRequest(res, ['Add at least one candidate before running the campaign.']);
+    res.json(await db.updateBatch(batch.id, { status: 'live', launched_at: batch.launched_at || new Date().toISOString(), closed_at: null }));
+  } catch (err) { next(err); }
+});
+
+/** POST /api/hr/batches/:id/close → no new calls can start; finished results stay. */
+router.post('/batches/:id/close', async (req, res, next) => {
+  try {
+    res.json(await db.updateBatch(req.params.id, { status: 'closed', closed_at: new Date().toISOString() }));
+  } catch (err) { next(err); }
+});
+
+// ── Dashboard analytics ───────────────────────────────────────────────────
+
+/** GET /api/hr/analytics → numbers for every campaign the user can see. */
+router.get('/analytics', async (req, res, next) => {
+  try {
+    const batches = await db.listBatches(req.user.role === ROLES.SUPERADMIN ? {} : { ownerId: req.user.id });
+    const candidates = await db.listCandidatesForBatches(batches.map(b => b.id));
+    const calls = await db.listCallsForCandidates(candidates.map(c => c.id));
+    res.json(computeAnalytics({ batches, candidates, calls }));
+  } catch (err) { next(err); }
+});
+
+// ── Candidate spreadsheet upload ──────────────────────────────────────────
+
+const sheetUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 } });
+
+/**
+ * POST /api/hr/parse-candidates (multipart "file": .xlsx or .csv)
+ * → { rows: [{ name, email }], columns: { name, email } } read from the first sheet.
+ * Nothing is saved; the client shows a preview and then adds the rows.
+ */
+router.post('/parse-candidates', sheetUpload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file?.buffer?.length) return badRequest(res, ['Choose an Excel (.xlsx) or CSV file.']);
+    const name = (req.file.originalname || '').toLowerCase();
+    let table;
+    if (name.endsWith('.csv') || req.file.mimetype === 'text/csv') {
+      table = parseCsvTable(req.file.buffer.toString('utf8'));
+    } else if (name.endsWith('.xlsx')) {
+      const book = new ExcelJS.Workbook();
+      try { await book.xlsx.load(req.file.buffer); } catch { return badRequest(res, ['This file could not be read as an Excel workbook.']); }
+      const sheet = book.worksheets[0];
+      table = [];
+      sheet?.eachRow({ includeEmpty: false }, row => {
+        table.push(row.values.slice(1).map(v => cellText(v)));
+      });
+    } else {
+      return badRequest(res, ['Use an .xlsx or .csv file.']);
+    }
+    const result = rowsFromTable(table);
+    if (result.error) return badRequest(res, [result.error]);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+// ── Team (Admin only) ─────────────────────────────────────────────────────
+
+router.get('/team', adminOnly, async (req, res, next) => {
+  try {
+    const [staff, batches] = await Promise.all([db.listStaff(), db.listBatches()]);
+    const owned = {};
+    for (const b of batches) owned[b.created_by] = (owned[b.created_by] || 0) + 1;
+    res.json(staff.map(s => ({ ...s, campaigns: owned[s.id] || 0, is_you: s.id === req.user.id })));
+  } catch (err) { next(err); }
+});
+
+/** POST /api/hr/team { name, email, password, role } → creates an HR account (signs in with this password). */
+router.post('/team', adminOnly, async (req, res, next) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    const role = req.body?.role === ROLES.SUPERADMIN ? ROLES.SUPERADMIN : ROLES.RECRUITER;
+    const errors = [];
+    if (!name) errors.push('Name is required.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Enter a valid email.');
+    if (password.length < 8) errors.push('The password needs at least 8 characters.');
+    if (errors.length) return badRequest(res, errors);
+
+    const existing = await db.getProfileByEmail(email);
+    if (existing) return res.status(409).json({ error: 'Conflict', message: 'An account with this email already exists.' });
+
+    const { data, error } = await db.supabase.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name } });
+    if (error) throw error;
+    const profile = await db.updateProfile(data.user.id, { role, name });
+    res.status(201).json({ ...profile, campaigns: 0 });
+  } catch (err) { next(err); }
+});
+
+/** PATCH /api/hr/team/:userId { role } → Admin ⇄ Recruiter. */
+router.patch('/team/:userId', adminOnly, async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    if (!UUID_RE.test(userId)) return notFound(res, 'Account');
+    if (userId === req.user.id) return badRequest(res, ['You cannot change your own role.']);
+    const role = req.body?.role;
+    if (!HR_ROLES.includes(role)) return badRequest(res, ['Role must be admin or recruiter.']);
+    const target = await db.getProfile(userId);
+    if (!target || !HR_ROLES.includes(target.role)) return notFound(res, 'Account');
+    const profile = await db.updateProfile(userId, { role });
+    clearRoleCache(userId);
+    res.json(profile);
+  } catch (err) { next(err); }
+});
+
+/** DELETE /api/hr/team/:userId → removes an HR account; its campaigns move to the Admin who removed it. */
+router.delete('/team/:userId', adminOnly, async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    if (!UUID_RE.test(userId)) return notFound(res, 'Account');
+    if (userId === req.user.id) return badRequest(res, ['You cannot remove your own account.']);
+    const target = await db.getProfile(userId);
+    if (!target || !HR_ROLES.includes(target.role)) return notFound(res, 'Account');
+    await db.reassignBatches(userId, req.user.id);
+    const { error } = await db.supabase.auth.admin.deleteUser(userId);
+    if (error) throw error;
+    clearRoleCache(userId);
+    res.status(204).end();
+  } catch (err) { next(err); }
+});
+
+router.use((err, req, res, next) => {
+  if (err?.name === 'MulterError') {
+    return res.status(400).json({ error: 'Bad Request', message: err.code === 'LIMIT_FILE_SIZE' ? 'The file is larger than 2 MB.' : 'Upload one file.' });
+  }
+  next(err);
 });
 
 export default router;

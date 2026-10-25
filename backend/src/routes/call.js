@@ -32,9 +32,11 @@ function conflict(res, message) {
 }
 
 async function loadOwnCandidate(req, res) {
-  const candidate = await db.getCandidateForUser(req.user.id);
+  let candidate = await db.getCandidateForUser(req.user.id);
+  // First visit after Google / email-code sign-in: link the rows HR added for this email.
+  if (!candidate && await db.claimCandidatesByEmail(req.user.id, req.user.email)) candidate = await db.getCandidateForUser(req.user.id);
   if (!candidate) {
-    res.status(404).json({ error: 'Not Found', message: 'No screening invitation found for this account.' });
+    res.status(404).json({ error: 'Not Found', message: 'No screening found for this email. Check with HR that they added this exact address and ran the campaign.' });
     return null;
   }
   return candidate;
@@ -70,11 +72,21 @@ export async function expireStaleCall(candidate) {
 }
 
 /** Writes the summary and fit score in the background once a call is complete. */
+// The brain sometimes answers slowly or unreadably; one more try a little later usually works.
+const SUMMARY_RETRY_MS = 5000;
+
 function summarizeLater(callId, batch) {
   (async () => {
     const answers = await db.listAnswers(callId);
-    const result = await summarizeCall({ batch, answers });
-    if (result.summary) await db.updateCall(callId, { summary: result.summary, fit_score: result.fit_score });
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const result = await summarizeCall({ batch, answers });
+      if (result.summary) {
+        await db.updateCall(callId, { summary: result.summary, fit_score: result.fit_score });
+        return;
+      }
+      console.warn(`[Call ${callId}] No summary from the brain (attempt ${attempt}).`);
+      if (attempt === 1) await new Promise(r => setTimeout(r, SUMMARY_RETRY_MS));
+    }
   })().catch(err => console.error(`[Call ${callId}] Summary failed:`, err.message));
 }
 
@@ -85,6 +97,7 @@ router.post('/start', async (req, res, next) => {
     if (!candidate) return;
     await expireStaleCall(candidate);
 
+    if (candidate.batch?.status !== 'live') return conflict(res, 'This campaign is not taking calls right now. Please contact the HR team.');
     if (candidate.status === 'in_call') return conflict(res, 'Your call is already open in another tab or window.');
     if (candidate.status !== 'resume_uploaded') {
       return conflict(res, candidate.status === 'invited'
