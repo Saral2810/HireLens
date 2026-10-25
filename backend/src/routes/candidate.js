@@ -3,6 +3,7 @@ import multer from 'multer';
 import db from '../config/db.js';
 import { extractResumeText, MAX_RESUME_BYTES } from '../services/resumeParser.js';
 import { writeResumeQuestions } from '../services/brain.js';
+import { expireStaleCall } from './call.js';
 
 /**
  * Candidate API. Mounted at /api/candidate behind requireAuth + requireRole('candidate').
@@ -41,7 +42,9 @@ function publicView(candidate) {
 router.get('/me', async (req, res, next) => {
   try {
     const candidate = await loadOwnCandidate(req, res);
-    if (candidate) res.json(publicView(candidate));
+    if (!candidate) return;
+    await expireStaleCall(candidate);
+    res.json(publicView(candidate));
   } catch (err) { next(err); }
 });
 

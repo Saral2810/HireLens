@@ -1,4 +1,4 @@
-import { AnswerType, Batch, BatchDetail, CandidatePortal, HrQuestion, InviteLinkResult, ResumeUploadResult, User } from '../types';
+import { AnswerType, Batch, BatchDetail, CallEndReason, CallStartResult, CallTurnResult, CandidatePortal, HrQuestion, InviteLinkResult, ResumeUploadResult, User } from '../types';
 
 const TOKEN_KEY = 'hr_auth_token';
 
@@ -125,32 +125,34 @@ class ApiService {
     await this.request(`/api/hr/candidates/${encodeURIComponent(candidateId)}`, { method: 'DELETE' });
   }
 
-  // ── Temporary call-loop spike (roadmap Phase B) ──
-  async spikeSpeak(text: string): Promise<{ audio: Blob; ms: number }> {
-    const response = await fetch('/api/spike/speak', {
+  // ── Screening call (Phase G) ──
+  async startCall(): Promise<CallStartResult> {
+    return this.request('/api/candidate/call/start', { method: 'POST' });
+  }
+
+  async callTurn(answer: Blob | null): Promise<CallTurnResult> {
+    const form = new FormData();
+    if (answer) form.append('audio', answer, 'answer.wav');
+    else form.append('no_speech', '1');
+    return this.request('/api/candidate/call/turn', { method: 'POST', body: form });
+  }
+
+  async uploadRecording(recording: Blob): Promise<{ recording_path: string }> {
+    const form = new FormData();
+    const ext = recording.type.includes('ogg') ? 'ogg' : 'webm';
+    form.append('recording', recording, `call.${ext}`);
+    return this.request('/api/candidate/call/recording', { method: 'POST', body: form });
+  }
+
+  /** Ends the call early. keepalive lets it finish while the page is closing. */
+  endCall(reason: CallEndReason): Promise<unknown> {
+    return fetch('/api/candidate/call/end', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.authToken}` },
-      body: JSON.stringify({ text })
-    });
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(body.message || `Speak failed (${response.status})`);
-    }
-    return { audio: await response.blob(), ms: Number(response.headers.get('X-Timbre-Ms') || 0) };
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json', ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}) },
+      body: JSON.stringify({ reason })
+    }).catch(() => undefined);
   }
-
-  async spikeTurn(form: FormData): Promise<SpikeTurnResult> {
-    return this.request<SpikeTurnResult>('/api/spike/turn', { method: 'POST', body: form });
-  }
-}
-
-export interface SpikeTurnResult {
-  transcript: string;
-  decision: { action: 'next' | 'repeat' | 'skip'; extracted: Record<string, unknown> | null; source: 'llm' | 'rule' };
-  say_text: string;
-  audio_base64: string;
-  audio_type: string;
-  timings: { stt_ms: number; brain_ms: number; tts_ms: number; total_ms: number };
 }
 
 export const api = new ApiService();

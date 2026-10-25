@@ -113,6 +113,15 @@ export class WavRecorder {
     });
   }
 
+  /** The audio graph and mic stream, so a call can also record and play through them. Null before open(). */
+  get audioContext(): AudioContext | null {
+    return this.ctx;
+  }
+
+  get mediaStream(): MediaStream | null {
+    return this.stream;
+  }
+
   /** Ends the current recording early (e.g. a "Done answering" button). */
   stop(): void {
     this.stopNow?.();

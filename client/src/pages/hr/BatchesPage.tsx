@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, FlaskConical } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { api } from '../../services/api';
 import { Batch } from '../../types';
 import { BatchFormModal } from '../../components/hr/BatchFormModal';
@@ -24,9 +24,6 @@ export const BatchesPage: React.FC = () => {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
         <h2 style={{ margin: 0 }}>Batches</h2>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Link to="/hr/call-test" className="lx-restored-btn" style={{ display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
-            <FlaskConical size={14} /> Call-loop test
-          </Link>
           <button className="lx-restored-btn primary" onClick={() => setCreating(true)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Plus size={14} /> New batch
           </button>
