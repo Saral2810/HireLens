@@ -1,11 +1,11 @@
 {
-  "name": "gnani-ai-platform",
+  "name": "hr-screening-voice-agent",
   "version": "0.1.0",
-  "description": "Gnani.ai voice campaign platform \u2014 framework (campaigns, leads, dialer, auth, dashboard) with a pluggable voice-provider slot.",
+  "description": "HR screening voice agent: candidates take a short browser voice call (Gnani Prisma + Timbre + an LLM brain); HR reviews results by batch.",
   "main": "backend/src/server.js",
   "type": "module",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "start": "node backend/src/server.js",
@@ -14,19 +14,14 @@
     "client:install": "npm --prefix client install",
     "client:build": "npm --prefix client run build",
     "client:dev": "npm --prefix client run dev",
-    "test": "NODE_ENV=test node --test tests/unit/*.test.js tests/integration/*.test.js backend/tests/unit/*.test.js",
-    "docker:build": "docker build -t gnani-ai-platform:latest .",
-    "docker:run": "docker run -p 3000:3000 --env-file .env gnani-ai-platform:latest",
-    "perf": "node tests/perf/load_test.js"
+    "test": "node --import ./tests/setup.js --test \"tests/unit/*.test.js\"",
+    "docker:build": "docker build -t hr-screening-voice-agent:latest .",
+    "docker:run": "docker run -p 3000:3000 --env-file .env hr-screening-voice-agent:latest"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
-    "bullmq": "^5.79.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "ioredis": "^5.11.1",
-    "node-cron": "^4.6.0",
-    "uuid": "^9.0.1"
+    "express": "^4.19.2"
   }
 }

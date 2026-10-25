@@ -1,92 +1,41 @@
 import React, { useEffect } from 'react';
+import { LogOut } from 'lucide-react';
 import { useAppStore } from './store/useAppStore';
-import { TopBar } from './components/layout/TopBar';
-import { Sidebar } from './components/layout/Sidebar';
-import { DashboardPage } from './pages/DashboardPage';
-import { LeadsPage } from './pages/LeadsPage';
-import { CampaignsPage } from './pages/CampaignsPage';
-import { LiveMonitorPage } from './pages/LiveMonitorPage';
-import { AgentsPage } from './pages/AgentsPage';
-import { IntegrationsPage } from './pages/IntegrationsPage';
-import { SchedulerPage } from './pages/SchedulerPage';
-import { SuperAdminPage } from './pages/SuperAdminPage';
-import { DncPage } from './pages/DncPage';
-import { HelpPage } from './pages/HelpPage';
-
-// Modals
-import { LeadDetailsModal } from './components/modals/LeadDetailsModal';
-import { SwitchProviderModal } from './components/modals/SwitchProviderModal';
-import { CreateCampaignModal } from './components/modals/CreateCampaignModal';
 import { LoginModal } from './components/auth/LoginModal';
 
+// Phase A shell. The HR portal (batches, questions, results) and the candidate portal
+// (resume upload, mic check, call) replace the placeholder in roadmap Phases D–H.
 export const App: React.FC = () => {
-  const { activePage, setActivePage, theme, initSession } = useAppStore();
+  const { theme, currentUser, sessionChecked, initSession, logout } = useAppStore();
 
   useEffect(() => {
-    initSession();
-
-    // Mount theme on document root
     document.documentElement.setAttribute('data-pd-theme', theme);
-
-    // Keyboard shortcut handler
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === '?' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
-        setActivePage('help');
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    initSession();
   }, []);
 
-  const renderPage = () => {
-    switch (activePage) {
-      case 'home':
-        return <DashboardPage />;
-      case 'leads':
-        return <LeadsPage />;
-      case 'campaigns':
-        return <CampaignsPage />;
-      case 'monitor':
-        return <LiveMonitorPage />;
-      case 'agents':
-        return <AgentsPage />;
-      case 'crm':
-      case 'integrations':
-        return <IntegrationsPage />;
-      case 'scheduler':
-        return <SchedulerPage />;
-      case 'settings':
-        return <SuperAdminPage />;
-      case 'dnc':
-        return <DncPage />;
-      case 'help':
-        return <HelpPage />;
-      default:
-        return <DashboardPage />;
-    }
-  };
+  if (!sessionChecked) return null;
+  if (!currentUser) return <LoginModal />;
+
+  const roleLabel = currentUser.role === 'superadmin' ? 'HR (super-admin)' : 'Candidate';
 
   return (
     <div className="lx-wrap">
-      {/* Top Navigation */}
-      <TopBar />
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 24px', borderBottom: '1px solid var(--lx-border)' }}>
+        <div style={{ fontWeight: 700, color: 'var(--lx-text)' }}>HR Screening Voice Agent</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, color: 'var(--lx-muted)' }}>
+          <span>{currentUser.email} · {roleLabel}</span>
+          <button className="lx-restored-btn" onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <LogOut size={14} /> Sign out
+          </button>
+        </div>
+      </header>
 
-      {/* Main Body */}
-      <div className="lx-body" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Sidebar */}
-        <Sidebar />
-
-        {/* Content View */}
-        <main className="lx-main" style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
-          {renderPage()}
-        </main>
-      </div>
-
-      {/* Global Modals */}
-      <LeadDetailsModal />
-      <SwitchProviderModal />
-      <CreateCampaignModal />
-      <LoginModal />
+      <main className="lx-main" style={{ padding: 24, color: 'var(--lx-text)' }}>
+        <h2 style={{ marginTop: 0 }}>Signed in as {roleLabel}</h2>
+        <p style={{ color: 'var(--lx-muted)' }}>
+          The {currentUser.role === 'superadmin' ? 'HR portal (batches, questions, results)' : 'candidate portal (resume upload, mic check, screening call)'} is being built.
+        </p>
+      </main>
     </div>
   );
 };

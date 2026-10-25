@@ -1,16 +1,14 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { api } from '../../services/api';
-import { Lock, LogIn, AlertCircle } from 'lucide-react';
+import { LogIn, AlertCircle } from 'lucide-react';
 
 export const LoginModal: React.FC = () => {
-  const { isAuthModalOpen, setAuthModalOpen, setCurrentUser, addNotification } = useAppStore();
+  const { setCurrentUser } = useAppStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  if (!isAuthModalOpen) return null;
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,16 +19,6 @@ export const LoginModal: React.FC = () => {
       const res = await api.login(email, password);
       if (res.user) {
         setCurrentUser(res.user);
-        setAuthModalOpen(false);
-        try {
-          const tenants = await api.getTenants();
-          useAppStore.setState({ tenantsList: tenants });
-        } catch {}
-        addNotification({
-          title: 'Welcome to Gnani.ai',
-          message: `Signed in as ${res.user.email} (${res.user.isSuperAdmin ? 'Super-Admin' : 'Operator'}).`,
-          type: 'success'
-        });
       }
     } catch (err: any) {
       setError(err.message || 'Invalid email or password');
@@ -42,9 +30,9 @@ export const LoginModal: React.FC = () => {
   return (
     <div 
       className="lx-restored-modal show" 
-      style={{ zIndex: 99999, background: 'rgba(4, 7, 16, 0.88)', backdropFilter: 'blur(12px)' }}
+      style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 99999, background: 'rgba(4, 7, 16, 0.88)', backdropFilter: 'blur(12px)' }}
     >
-      <div className="lx-restored-box" style={{ maxWidth: 420, padding: '32px 28px' }}>
+      <div className="lx-restored-box" style={{ width: '100%', maxWidth: 420, padding: '32px 28px', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
           <div style={{ 
             width: 42, 
@@ -59,14 +47,14 @@ export const LoginModal: React.FC = () => {
             fontSize: 16, 
             boxShadow: '0 4px 14px rgba(99,102,241,0.35)' 
           }}>
-            LX
+            HR
           </div>
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--lx-text)', letterSpacing: '-0.01em' }}>
-              Sign in to Gnani.ai
+              Sign in to HR Screening
             </div>
             <div style={{ fontSize: 12, color: 'var(--lx-muted)', marginTop: 2 }}>
-              Enterprise Voice & Lead AI Platform
+              Voice screening calls with Gnani Prisma and Timbre
             </div>
           </div>
         </div>
@@ -114,13 +102,9 @@ export const LoginModal: React.FC = () => {
             disabled={loading}
           >
             <LogIn size={15} />
-            {loading ? 'Authenticating...' : 'Sign In to Workspace'}
+            {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
-
-        <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--lx-border)', fontSize: 11.5, color: 'var(--lx-muted)', textAlign: 'center' }}>
-          Offline mock mode: <code style={{ color: 'var(--lx-green)', fontFamily: 'monospace' }}>superadmin@local.dev</code> + your MOCK_ADMIN_PASSWORD
-        </div>
       </div>
     </div>
   );

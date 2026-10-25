@@ -1,5 +1,5 @@
 # ==============================================================================
-# Gnani.ai Production Dockerfile
+# HR Screening Voice Agent: production Dockerfile
 # ==============================================================================
 
 # Stage 1: Dependency Installation for Backend
