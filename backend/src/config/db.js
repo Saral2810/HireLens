@@ -84,7 +84,7 @@ const db = {
   async getCandidateForUser(userId) {
     const rows = unwrap(await requireClient()
       .from('candidates')
-      .select('id, batch_id, name, email, status, batch:batches(id, name, batch_date, job_role, company_name)')
+      .select('id, batch_id, name, email, status, consent_at, resume_path, resume_questions, batch:batches(id, name, batch_date, job_role, company_name, job_description)')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(1));
@@ -192,6 +192,17 @@ const db = {
       .from('candidates')
       .upsert(rows, { onConflict: 'batch_id,email', ignoreDuplicates: true })
       .select('id, batch_id, user_id, name, email, status, created_at'));
+  },
+
+  async updateCandidate(candidateId, fields) {
+    return unwrap(await requireClient().from('candidates').update(fields).eq('id', candidateId).select('id, status, consent_at, resume_path').single());
+  },
+
+  /** Saves a file to private storage (replacing any earlier version at the same path). */
+  async uploadFile(bucket, path, buffer, contentType) {
+    const { error } = await requireClient().storage.from(bucket).upload(path, buffer, { contentType, upsert: true });
+    if (error) throw error;
+    return path;
   },
 
   async deleteCandidate(candidateId) {

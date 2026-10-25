@@ -53,6 +53,25 @@ export interface InviteLinkResult {
   error?: string;
 }
 
+/** What a candidate sees about their own screening (questions stay hidden until the call). */
+export interface CandidatePortal {
+  id: string;
+  name: string;
+  status: CandidateStatus;
+  consent_given: boolean;
+  has_resume: boolean;
+  batch: BatchSummary | null;
+}
+
+export interface ResumeUploadResult {
+  status: CandidateStatus;
+  readable: boolean;
+  pages: number;
+  questions_ready: number;
+  questions_from: 'resume' | 'general';
+  message: string;
+}
+
 export interface User {
   id: string;
   email: string;

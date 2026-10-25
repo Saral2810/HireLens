@@ -1,4 +1,4 @@
-import { AnswerType, Batch, BatchDetail, HrQuestion, InviteLinkResult, User } from '../types';
+import { AnswerType, Batch, BatchDetail, CandidatePortal, HrQuestion, InviteLinkResult, ResumeUploadResult, User } from '../types';
 
 const TOKEN_KEY = 'hr_auth_token';
 
@@ -49,6 +49,21 @@ class ApiService {
 
   async getMe(): Promise<User> {
     return this.request<User>('/api/auth/me');
+  }
+
+  // ── Candidate ──
+  async candidateMe(): Promise<CandidatePortal> {
+    return this.request('/api/candidate/me');
+  }
+
+  async uploadResume(file: File): Promise<ResumeUploadResult> {
+    const form = new FormData();
+    form.append('resume', file, file.name);
+    return this.request('/api/candidate/resume', { method: 'POST', body: form });
+  }
+
+  async giveConsent(): Promise<{ consent_given: boolean; consent_at: string }> {
+    return this.request('/api/candidate/consent', { method: 'POST', body: JSON.stringify({ agree: true }) });
   }
 
   // ── HR ──

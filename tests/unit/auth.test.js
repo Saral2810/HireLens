@@ -80,6 +80,14 @@ test('call-loop spike endpoints are HR-only', async () => {
   assert.equal((await post('test:superadmin:hr1')).status, 400);
 });
 
+test('candidate endpoints are candidate-only', async () => {
+  const get = (token) => fetch(base + '/api/candidate/me', { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  assert.equal((await get()).status, 401);
+  assert.equal((await get('test:superadmin:hr1')).status, 403);
+  // A candidate reaches the route, which needs the database (not available in tests).
+  assert.equal((await get('test:candidate:c1')).status, 503);
+});
+
 test('/health responds', async () => {
   const res = await get('/health');
   assert.equal(res.status, 200);
