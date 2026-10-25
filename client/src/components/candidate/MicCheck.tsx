@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Mic, Play, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Mic } from 'lucide-react';
 import { WavRecorder } from '../../lib/wavRecorder';
 import { ErrorNote } from '../ui/Modal';
 
@@ -48,39 +48,39 @@ export const MicCheck: React.FC<Props> = ({ onHeard, heard }) => {
   };
 
   return (
-    <div>
-      <p style={{ color: 'var(--lx-muted)', fontSize: 14, marginTop: 0 }}>
-        Use headphones if you can, in a quiet room. Click the button and say: <em>"Hello, mera naam ... hai."</em>
+    <div className="stack">
+      <p className="muted">
+        Use headphones if you can, in a quiet room. Click the button and say: <em>"Hello, mera naam … hai."</em> Then play it back.
       </p>
       <ErrorNote message={error} />
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button className="lx-restored-btn" onClick={test} disabled={phase === 'recording'} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Mic size={14} /> {phase === 'recording' ? 'Listening… speak now' : heard ? 'Test again' : 'Test my microphone'}
+      <div className="row-wrap" style={{ gap: 12 }}>
+        <button className={`btn${heard ? '' : ' btn-primary'}`} onClick={test} disabled={phase === 'recording'}>
+          <Mic size={15} /> {phase === 'recording' ? 'Listening… speak now' : heard ? 'Test again' : 'Test my microphone'}
         </button>
         {phase === 'recording' && (
-          <div aria-label="Microphone level" style={{ width: 160, height: 8, background: 'var(--lx-border)', borderRadius: 4, overflow: 'hidden' }}>
-            <div style={{ width: `${Math.min(100, level * 600)}%`, height: '100%', background: 'var(--lx-green, #22c55e)' }} />
+          <div className="meter grow" aria-label="Microphone level" style={{ maxWidth: 220 }}>
+            <div style={{ width: `${Math.min(100, level * 600)}%` }} />
           </div>
         )}
       </div>
 
       {phase === 'review' && clipUrl && (
-        <div style={{ marginTop: 12 }}>
-          {quiet && <p style={{ fontSize: 13, color: '#f59e0b' }}>We could not hear you clearly. Move closer to the mic or check that the right microphone is selected, then test again.</p>}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <audio src={clipUrl} controls style={{ height: 32 }} />
-            {!heard && !quiet && (
-              <button className="lx-restored-btn primary" onClick={onHeard} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Play size={14} /> I can hear myself clearly
-              </button>
-            )}
-          </div>
+        <div className="stack-sm">
+          {quiet && (
+            <div className="alert alert-warn" style={{ marginBottom: 0 }}>
+              <AlertTriangle size={15} /><span>We could not hear you clearly. Move closer to the mic or check that the right microphone is selected, then test again.</span>
+            </div>
+          )}
+          <audio src={clipUrl} controls />
+          {!heard && !quiet && (
+            <button className="btn btn-primary" onClick={onHeard} style={{ alignSelf: 'flex-start' }}>
+              <CheckCircle2 size={15} /> I can hear myself clearly
+            </button>
+          )}
         </div>
       )}
       {heard && (
-        <p style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--lx-green, #22c55e)' }}>
-          <CheckCircle2 size={14} /> Microphone works.
-        </p>
+        <div className="alert alert-success" style={{ marginBottom: 0 }}><CheckCircle2 size={15} /><span>Microphone works.</span></div>
       )}
     </div>
   );

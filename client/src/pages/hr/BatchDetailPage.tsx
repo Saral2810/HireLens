@@ -1,16 +1,18 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Building2, CalendarDays, Pencil, Trash2 } from 'lucide-react';
 import { api } from '../../services/api';
 import { BatchDetail } from '../../types';
 import { BatchFormModal } from '../../components/hr/BatchFormModal';
 import { QuestionEditor } from '../../components/hr/QuestionEditor';
 import { CandidatesPanel } from '../../components/hr/CandidatesPanel';
+import { ResultsTable } from '../../components/hr/ResultsTable';
 import { ErrorNote } from '../../components/ui/Modal';
+import { formatDate } from './BatchesPage';
 
 type Tab = 'questions' | 'candidates' | 'results';
 
-/** One batch: details, HR questions, candidates (and results from Phase H). */
+/** One batch: details, HR questions, candidates and results. */
 export const BatchDetailPage: React.FC = () => {
   const { batchId = '' } = useParams();
   const navigate = useNavigate();
@@ -18,10 +20,15 @@ export const BatchDetailPage: React.FC = () => {
   const [tab, setTab] = useState<Tab>('questions');
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const firstLoad = useRef(true);
 
   const load = useCallback(async () => {
     try {
-      setBatch(await api.getBatch(batchId));
+      const loaded = await api.getBatch(batchId);
+      // Open on Results once calls have happened (first load only).
+      if (firstLoad.current && loaded.candidates.some(c => c.status === 'completed' || c.status === 'failed')) setTab('results');
+      firstLoad.current = false;
+      setBatch(loaded);
     } catch (err: any) {
       setError(err.message);
     }
@@ -39,56 +46,41 @@ export const BatchDetailPage: React.FC = () => {
     }
   };
 
+  const back = <Link to="/hr" className="back-link"><ArrowLeft size={14} /> All batches</Link>;
   if (!batch) {
-    return (
-      <div>
-        <Link to="/hr" style={{ color: 'var(--lx-muted)', fontSize: 13 }}>← All batches</Link>
-        <ErrorNote message={error} />
-        {!error && <p style={{ color: 'var(--lx-muted)' }}>Loading…</p>}
-      </div>
-    );
+    return <div>{back}<ErrorNote message={error} />{!error && <p className="muted">Loading…</p>}</div>;
   }
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'questions', label: `HR questions (${batch.questions.length})` },
-    { id: 'candidates', label: `Candidates (${batch.candidates.length})` },
-    { id: 'results', label: 'Results' }
+  const completed = batch.candidates.filter(c => c.status === 'completed').length;
+  const tabs: { id: Tab; label: string; count: number }[] = [
+    { id: 'questions', label: 'HR questions', count: batch.questions.length },
+    { id: 'candidates', label: 'Candidates', count: batch.candidates.length },
+    { id: 'results', label: 'Results', count: completed }
   ];
 
   return (
-    <div style={{ maxWidth: 1000 }}>
-      <Link to="/hr" style={{ color: 'var(--lx-muted)', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-        <ArrowLeft size={13} /> All batches
-      </Link>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', margin: '10px 0 16px' }}>
+    <div>
+      {back}
+      <div className="page-head">
         <div>
-          <h2 style={{ margin: 0 }}>{batch.name}</h2>
-          <div style={{ color: 'var(--lx-muted)', fontSize: 14, marginTop: 4 }}>
-            {batch.job_role}{batch.company_name ? ` · ${batch.company_name}` : ''} · {new Date(`${batch.batch_date}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+          <h1>{batch.name}</h1>
+          <div className="row-wrap small muted mt-sm" style={{ gap: 14 }}>
+            <span className="strong" style={{ color: 'var(--text-2)' }}>{batch.job_role}</span>
+            {batch.company_name && <span className="row" style={{ gap: 4 }}><Building2 size={14} /> {batch.company_name}</span>}
+            <span className="row" style={{ gap: 4 }}><CalendarDays size={14} /> {formatDate(batch.batch_date)}</span>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="lx-restored-btn" onClick={() => setEditing(true)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Pencil size={13} /> Edit</button>
-          <button className="lx-restored-btn" onClick={deleteBatch} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Trash2 size={13} /> Delete</button>
+        <div className="btn-group">
+          <button className="btn" onClick={() => setEditing(true)}><Pencil size={14} /> Edit</button>
+          <button className="btn btn-danger" onClick={deleteBatch}><Trash2 size={14} /> Delete</button>
         </div>
       </div>
       <ErrorNote message={error} />
 
-      <div role="tablist" style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--lx-border)', marginBottom: 16, flexWrap: 'wrap' }}>
+      <div className="tabs" role="tablist">
         {tabs.map(t => (
-          <button
-            key={t.id}
-            role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => setTab(t.id)}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer', padding: '8px 12px', fontSize: 14,
-              color: tab === t.id ? 'var(--lx-text)' : 'var(--lx-muted)',
-              borderBottom: tab === t.id ? '2px solid var(--lx-accent, #818cf8)' : '2px solid transparent', fontWeight: tab === t.id ? 600 : 400
-            }}
-          >
-            {t.label}
+          <button key={t.id} role="tab" className="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>
+            {t.label} <span className="tab-count">{t.count}</span>
           </button>
         ))}
       </div>
@@ -97,9 +89,7 @@ export const BatchDetailPage: React.FC = () => {
         <QuestionEditor batchId={batch.id} questions={batch.questions} onChange={(questions) => setBatch({ ...batch, questions })} />
       )}
       {tab === 'candidates' && <CandidatesPanel batchId={batch.id} candidates={batch.candidates} onReload={load} />}
-      {tab === 'results' && (
-        <p style={{ color: 'var(--lx-muted)' }}>Each candidate's answers, transcript and recording appear here once their calls are done.</p>
-      )}
+      {tab === 'results' && <ResultsTable batchId={batch.id} onCandidatesChanged={load} />}
 
       {editing && (
         <BatchFormModal

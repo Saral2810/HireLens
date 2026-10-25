@@ -3,9 +3,20 @@ import { User } from '../types';
 import { api } from '../services/api';
 import { consumeInviteFragment } from '../lib/inviteSession';
 
+export type Theme = 'light' | 'dark';
+
+function initialTheme(): Theme {
+  try {
+    const saved = localStorage.getItem('hr_theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+  } catch { /* storage blocked */ }
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 interface AppState {
-  theme: 'dark' | 'light';
-  setTheme: (theme: 'dark' | 'light') => void;
+  /** The theme being shown: the saved choice, else the computer's setting. */
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
 
   currentUser: User | null;
   sessionChecked: boolean;
@@ -18,10 +29,10 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  theme: (localStorage.getItem('hr_theme') as 'dark' | 'light') || 'dark',
+  theme: initialTheme(),
   setTheme: (theme) => {
-    localStorage.setItem('hr_theme', theme);
-    document.documentElement.setAttribute('data-pd-theme', theme);
+    try { localStorage.setItem('hr_theme', theme); } catch { /* private mode: not remembered */ }
+    document.documentElement.setAttribute('data-theme', theme);
     set({ theme });
   },
 

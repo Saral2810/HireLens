@@ -1,4 +1,4 @@
-import { AnswerType, Batch, BatchDetail, CallEndReason, CallStartResult, CallTurnResult, CandidatePortal, HrQuestion, InviteLinkResult, ResumeUploadResult, User } from '../types';
+import { AnswerType, Batch, BatchDetail, BatchResults, CallDetail, CallEndReason, CallStartResult, CallTurnResult, CandidatePortal, HrQuestion, InviteLinkResult, ResumeUploadResult, User } from '../types';
 
 const TOKEN_KEY = 'hr_auth_token';
 
@@ -123,6 +123,38 @@ class ApiService {
 
   async deleteCandidate(candidateId: string): Promise<void> {
     await this.request(`/api/hr/candidates/${encodeURIComponent(candidateId)}`, { method: 'DELETE' });
+  }
+
+  async allowRetake(candidateId: string): Promise<{ candidate_id: string; status: string; note: string }> {
+    return this.request(`/api/hr/candidates/${encodeURIComponent(candidateId)}/allow-retake`, { method: 'POST' });
+  }
+
+  // ── Results (Phase H) ──
+  async getResults(batchId: string): Promise<BatchResults> {
+    return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/results`);
+  }
+
+  async getCall(callId: string): Promise<CallDetail> {
+    return this.request(`/api/hr/calls/${encodeURIComponent(callId)}`);
+  }
+
+  /** Downloads the results table as a file (the browser saves it). */
+  async downloadResults(batchId: string, format: 'csv' | 'xlsx'): Promise<void> {
+    const response = await fetch(`/api/hr/batches/${encodeURIComponent(batchId)}/export?format=${format}`, {
+      headers: this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      if (response.status === 401) window.dispatchEvent(new Event('hr:unauthorized'));
+      throw new Error(body.message || `Export failed (${response.status})`);
+    }
+    const name = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') || '')?.[1] || `results.${format}`;
+    const url = URL.createObjectURL(await response.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   // ── Screening call (Phase G) ──

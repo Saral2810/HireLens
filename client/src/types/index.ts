@@ -112,3 +112,65 @@ export interface CallTurnResult {
 }
 
 export type CallEndReason = 'ended_by_candidate' | 'left_page' | 'client_error';
+
+// ── Results (Phase H) ──
+
+export interface ResultAnswer {
+  position: number;
+  source: 'intro' | 'resume' | 'hr';
+  question_text: string;
+  answer_type: AnswerType;
+  outcome: 'answered' | 'skipped';
+  attempts: number;
+  answer_text: string | null;
+  extracted_value: Record<string, unknown> | null;
+  /** Ready to show: "60 days", "12 LPA", "Yes", "Skipped", or the answer text. */
+  display: string;
+}
+
+export interface ResultCall {
+  id: string;
+  status: 'in_progress' | 'completed' | 'failed';
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  summary: string | null;
+  fit_score: number | null;
+  has_recording: boolean;
+  failure_reason: string | null;
+}
+
+export interface ResultRow {
+  candidate_id: string;
+  name: string;
+  email: string;
+  status: CandidateStatus;
+  failure_reason: string | null;
+  /** How many calls the candidate has had (a retake makes it more than 1). */
+  attempts: number;
+  call: ResultCall | null;
+  notice_period_days: number | null;
+  current_ctc_lpa: number | null;
+  expected_ctc_lpa: number | null;
+  answers: ResultAnswer[];
+}
+
+export interface BatchResults {
+  batch: Batch;
+  questions: HrQuestion[];
+  rows: ResultRow[];
+}
+
+export interface TranscriptLine {
+  speaker: 'agent' | 'candidate';
+  text: string;
+  position: number | null;
+  at: string;
+}
+
+export interface CallDetail extends ResultRow {
+  transcript: TranscriptLine[];
+  recording_url: string | null;
+  resume_url: string | null;
+  links_expire_in_seconds: number;
+}

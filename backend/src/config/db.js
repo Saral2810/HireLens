@@ -75,7 +75,7 @@ const db = {
   async getCandidate(candidateId) {
     return unwrap(await requireClient()
       .from('candidates')
-      .select('id, batch_id, user_id, name, email, status, batch:batches(id, name, batch_date, job_role, company_name)')
+      .select('id, batch_id, user_id, name, email, status, resume_path, batch:batches(id, name, batch_date, job_role, company_name)')
       .eq('id', candidateId)
       .maybeSingle());
   },
@@ -266,6 +266,29 @@ const db = {
 
   async listAnswers(callId) {
     return unwrap(await requireClient().from('answers').select('*').eq('call_id', callId).order('position'));
+  },
+
+  // ── Results (Phase H) ──
+
+  /** Every call of these candidates (without the transcript, which can be long). */
+  async listCallsForCandidates(candidateIds) {
+    if (!candidateIds.length) return [];
+    return unwrap(await requireClient()
+      .from('calls')
+      .select('id, candidate_id, status, recording_path, summary, fit_score, failure_reason, started_at, ended_at')
+      .in('candidate_id', candidateIds));
+  },
+
+  async listAnswersForCalls(callIds) {
+    if (!callIds.length) return [];
+    return unwrap(await requireClient().from('answers').select('*').in('call_id', callIds).order('position'));
+  },
+
+  /** Time-limited link to a private file. */
+  async signedUrl(bucket, path, seconds) {
+    const { data, error } = await requireClient().storage.from(bucket).createSignedUrl(path, seconds);
+    if (error) throw error;
+    return data.signedUrl;
   }
 };
 

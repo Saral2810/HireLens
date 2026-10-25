@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileUp, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, FileText, UploadCloud } from 'lucide-react';
 import { api } from '../../services/api';
 import { ResumeUploadResult } from '../../types';
 import { ErrorNote } from '../ui/Modal';
@@ -14,6 +14,7 @@ interface Props {
 /** Step 1: upload a PDF resume. The agent asks 3–5 questions about it during the call. */
 export const ResumeUpload: React.FC<Props> = ({ hasResume, onUploaded }) => {
   const [file, setFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<ResumeUploadResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,31 +50,45 @@ export const ResumeUpload: React.FC<Props> = ({ hasResume, onUploaded }) => {
   };
 
   return (
-    <div>
-      <p style={{ color: 'var(--lx-muted)', fontSize: 14, marginTop: 0 }}>
-        Upload your resume as a text-based PDF (max 5 MB). The assistant will ask a few questions about your own projects and experience.
+    <div className="stack">
+      <p className="muted">
+        A text-based PDF, up to 5 MB. The assistant will ask a few questions about your own projects and experience.
       </p>
-      {hasResume && !result && (
-        <p style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--lx-green, #22c55e)' }}>
-          <CheckCircle2 size={14} /> Resume received. You can replace it until the call starts.
-        </p>
+      {hasResume && !result && !file && (
+        <div className="alert alert-success" style={{ marginBottom: 0 }}><CheckCircle2 size={15} /><span>Resume received. You can replace it until the call starts.</span></div>
+      )}
+      {result && (
+        <div role="status" className={`alert ${result.readable ? 'alert-success' : 'alert-warn'}`} style={{ marginBottom: 0 }}>
+          <CheckCircle2 size={15} /><span>{result.message}</span>
+        </div>
       )}
       <ErrorNote message={error} />
-      {result && (
-        <p role="status" style={{ fontSize: 13, color: result.readable ? 'var(--lx-green, #22c55e)' : '#f59e0b' }}>{result.message}</p>
-      )}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <label className="lx-restored-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-          <FileUp size={14} /> {hasResume ? 'Choose a new PDF' : 'Choose PDF'}
-          <input type="file" accept="application/pdf,.pdf" onChange={e => choose(e.target.files?.[0])} style={{ display: 'none' }} />
-        </label>
-        {file && <span style={{ fontSize: 13, color: 'var(--lx-muted)' }}>{file.name} ({Math.ceil(file.size / 1024)} KB)</span>}
-        {file && (
-          <button className="lx-restored-btn primary" onClick={upload} disabled={uploading}>
-            {uploading ? 'Reading your resume…' : 'Upload'}
+
+      {file ? (
+        <div className="row-wrap card card-pad" style={{ padding: 14 }}>
+          <FileText size={20} className="muted" />
+          <div className="grow">
+            <div className="strong" style={{ wordBreak: 'break-all' }}>{file.name}</div>
+            <div className="tiny muted">{Math.ceil(file.size / 1024)} KB</div>
+          </div>
+          <button className="btn btn-ghost" onClick={() => setFile(null)} disabled={uploading}>Change</button>
+          <button className="btn btn-primary" onClick={upload} disabled={uploading}>
+            {uploading ? 'Reading your resume…' : 'Upload resume'}
           </button>
-        )}
-      </div>
+        </div>
+      ) : (
+        <label
+          className={`file-drop${dragging ? ' drag' : ''}`}
+          onDragOver={e => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={e => { e.preventDefault(); setDragging(false); choose(e.dataTransfer.files?.[0]); }}
+        >
+          <UploadCloud size={26} />
+          <span className="strong">{hasResume ? 'Choose a new PDF' : 'Choose your resume (PDF)'}</span>
+          <span className="tiny muted">or drop it here</span>
+          <input type="file" accept="application/pdf,.pdf" onChange={e => choose(e.target.files?.[0])} className="sr-only" />
+        </label>
+      )}
     </div>
   );
 };

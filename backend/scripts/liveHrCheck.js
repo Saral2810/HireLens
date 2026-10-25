@@ -183,6 +183,7 @@ async function run() {
   check('malformed id is a clean 404', malformed.status === 404);
 
   await screeningCall(opened.token, cand1.id);
+  await hrResults(hr.token, cand1.id, bulk.json.links.find(l => l.candidate_id !== cand1.id));
 }
 
 // ── Screening call (Phase G) ──
@@ -310,4 +311,54 @@ try {
   await cleanup();
   console.log(failures ? `\n${failures} check(s) failed.` : '\nAll checks passed.');
   process.exit(failures ? 1 : 0);
+}
+
+// ── HR results, export and retake (Phase H) ──
+
+async function hrResults(hrToken, cand1Id, otherLink) {
+  const results = await api('GET', `/api/hr/batches/${batchId}/results`, hrToken);
+  const row = results.json?.rows?.find(r => r.candidate_id === cand1Id);
+  check('results row has notice, CTC, score and summary',
+    row?.status === 'completed' && row.notice_period_days === 60 && row.current_ctc_lpa === 9 && row.expected_ctc_lpa === 12
+      && Number.isInteger(row.call?.fit_score) && !!row.call?.summary && row.call.has_recording,
+    `${row?.notice_period_days} days, ${row?.current_ctc_lpa} → ${row?.expected_ctc_lpa} LPA, score ${row?.call?.fit_score}`);
+  check('results list every candidate', results.json?.rows?.length === 2);
+
+  const detail = await api('GET', `/api/hr/calls/${row.call.id}`, hrToken);
+  check('call detail has answers, transcript and signed links',
+    detail.json?.answers?.length >= 8 && detail.json.transcript.length > 10 && /token=/.test(detail.json.recording_url || '') && !!detail.json.resume_url
+      && detail.json.links_expire_in_seconds === 600);
+  const audio = await fetch(detail.json.recording_url);
+  check('recording link downloads the file', audio.ok && (await audio.arrayBuffer()).byteLength === 4096);
+
+  const download = async (format) => {
+    const res = await fetch(`${BASE}/api/hr/batches/${batchId}/export?format=${format}`, { headers: { Authorization: `Bearer ${hrToken}` } });
+    return { status: res.status, type: res.headers.get('content-type') || '', name: res.headers.get('content-disposition') || '', body: Buffer.from(await res.arrayBuffer()) };
+  };
+  const csv = await download('csv');
+  const text = csv.body.toString('utf8');
+  check('CSV export downloads with headers and the candidate',
+    csv.status === 200 && /text\/csv/.test(csv.type) && /\.csv"/.test(csv.name) && text.includes('Notice period (days)') && text.includes('Test Candidate 1') && text.includes('60 days'));
+  const xlsx = await download('xlsx');
+  check('Excel export is a real .xlsx file', xlsx.status === 200 && /spreadsheetml/.test(xlsx.type) && xlsx.body.subarray(0, 2).toString() === 'PK', `${xlsx.body.length} bytes`);
+
+  check('a completed candidate cannot be given a retake', (await api('POST', `/api/hr/candidates/${cand1Id}/allow-retake`, hrToken)).status === 409);
+
+  // Second candidate: start a call, end it, then HR allows a retake.
+  const opened = await openLink(otherLink.invite_link);
+  const { data: u } = await db.supabase.from('candidates').select('user_id').eq('id', otherLink.candidate_id).single();
+  if (u?.user_id && !createdUserIds.includes(u.user_id)) createdUserIds.push(u.user_id);
+  await api('POST', '/api/candidate/consent', opened.token, { agree: true });
+  const form = new FormData();
+  form.append('resume', new Blob([makeTextPdf(['Test Candidate 2 (made-up)', 'Fresher, B.Tech 2026', 'Project: weather app in React'])], { type: 'application/pdf' }), 'resume.pdf');
+  await fetch(`${BASE}/api/candidate/resume`, { method: 'POST', headers: { Authorization: `Bearer ${opened.token}` }, body: form });
+  const started = await api('POST', '/api/candidate/call/start', opened.token);
+  const ended = await api('POST', '/api/candidate/call/end', opened.token, { reason: 'ended_by_candidate' });
+  const failed = await api('GET', '/api/candidate/me', opened.token);
+  check('ending a call early marks the candidate failed', started.status === 200 && ended.json?.ended === true && failed.json?.status === 'failed');
+  const retake = await api('POST', `/api/hr/candidates/${otherLink.candidate_id}/allow-retake`, hrToken);
+  const again = await api('GET', '/api/candidate/me', opened.token);
+  check('HR retake lets the candidate start again', retake.status === 200 && again.json?.status === 'resume_uploaded', retake.json?.status);
+  const after = (await api('GET', `/api/hr/batches/${batchId}/results`, hrToken)).json.rows.find(r => r.candidate_id === otherLink.candidate_id);
+  check('results keep the earlier attempt', after?.attempts === 1 && after.call?.status === 'failed');
 }

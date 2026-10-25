@@ -11,11 +11,10 @@ import { CandidateHomePage } from './pages/candidate/CandidateHomePage';
 // Two portals: HR (super-admin) under /hr, candidates under /candidate.
 // Each role is sent to its own area; the backend enforces the same split.
 export const App: React.FC = () => {
-  const { theme, currentUser, sessionChecked, inviteError, initSession } = useAppStore();
+  const { currentUser, sessionChecked, inviteError, initSession } = useAppStore();
   const location = useLocation();
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-pd-theme', theme);
     initSession();
   }, []);
 
@@ -29,9 +28,9 @@ export const App: React.FC = () => {
   const home = currentUser.role === 'superadmin' ? '/hr' : '/candidate';
 
   return (
-    <div className="lx-wrap">
+    <div className="app">
       <AppHeader />
-      <main className="lx-main" style={{ padding: 24, color: 'var(--lx-text)' }}>
+      <main className="container">
         <Routes>
           {currentUser.role === 'superadmin' && (
             <>

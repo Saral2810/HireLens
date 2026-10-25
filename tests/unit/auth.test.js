@@ -68,6 +68,17 @@ test('HR batch endpoints validate input before touching the database', async () 
   assert.equal((await fetch(base + '/api/hr/batches', { headers: { Authorization: 'Bearer test:candidate:c1' } })).status, 403);
 });
 
+test('results, call detail, export and retake are HR-only', async () => {
+  const id = '00000000-0000-4000-8000-000000000001';
+  const call = (method, path, token) => fetch(base + path, { method, headers: { Authorization: `Bearer ${token}` } });
+  for (const [method, path] of [['GET', `/api/hr/batches/${id}/results`], ['GET', `/api/hr/calls/${id}`], ['GET', `/api/hr/batches/${id}/export`], ['POST', `/api/hr/candidates/${id}/allow-retake`]]) {
+    assert.equal((await call(method, path, 'test:candidate:c1')).status, 403, path);
+    assert.equal((await call(method, path, 'test:superadmin:hr1')).status, 503, path);
+  }
+  // A bad export format is rejected before the database is touched.
+  assert.equal((await call('GET', `/api/hr/batches/${id}/export?format=pdf`, 'test:superadmin:hr1')).status, 400);
+});
+
 test('login requires email and password', async () => {
   const post = (body) => fetch(base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   assert.equal((await post({ email: 'x@test.local' })).status, 400);
