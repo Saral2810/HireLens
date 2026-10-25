@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import db from '../config/db.js';
-import { transcribe, speakCached } from '../services/gnaniSpeech.js';
+import { transcribe, speakCached, SpeechError } from '../services/gnaniSpeech.js';
 import { decideTurn, summarizeCall } from '../services/brain.js';
 import { buildQuestionPlan } from '../services/questionPlan.js';
 import {
@@ -135,7 +135,18 @@ router.post('/turn', answerUpload.single('audio'), async (req, res, next) => {
     const { question, attempt } = step;
 
     const silent = req.body?.no_speech === '1' || !req.file?.buffer?.length;
-    const heard = silent ? { transcript: '', ms: 0 } : await transcribe(req.file.buffer, { format: 'wav', callId: call.id });
+    let heard = { transcript: '', ms: 0, failed: false };
+    if (!silent) {
+      try {
+        heard = { ...(await transcribe(req.file.buffer, { format: 'wav', callId: call.id })), failed: false };
+      } catch (err) {
+        // Speech-to-text still failing after its retries must not end the call: treat the answer as
+        // unheard, so the question is asked again (and skipped after a second miss). Setup errors still fail.
+        if (!(err instanceof SpeechError) || !err.retryable) throw err;
+        console.warn(`[Call ${call.id}] Speech-to-text failed, asking again: ${err.message}`);
+        heard = { transcript: '', ms: 0, failed: true };
+      }
+    }
     const decision = await decideTurn({ question: question.question_text, answerType: question.answer_type, transcript: heard.transcript, attempt });
 
     // Work out what happens next, and voice it, before saving anything.
@@ -157,7 +168,7 @@ router.post('/turn', answerUpload.single('audio'), async (req, res, next) => {
     const ttsMs = Date.now() - ttsStarted;
 
     const now = new Date();
-    const updated = [...transcript, line('candidate', heard.transcript, question.position, now)];
+    const updated = [...transcript, { ...line('candidate', heard.transcript, question.position, now), ...(heard.failed ? { note: 'speech_service_error' } : {}) }];
     say.forEach((text, i) => {
       const isNextQuestion = upcoming && i === say.length - 1;
       updated.push(line('agent', text, isNextQuestion ? upcoming.position : (decision.action === 'repeat' ? question.position : null), now));
@@ -187,6 +198,7 @@ router.post('/turn', answerUpload.single('audio'), async (req, res, next) => {
       done: !!outcome,
       ...(outcome ? { outcome } : {}),
       heard: heard.transcript,
+      ...(heard.failed ? { speech_error: true } : {}),
       decision: decision.action,
       timings: { stt_ms: heard.ms, brain_ms: decision.ms, tts_ms: ttsMs, total_ms: Date.now() - started }
     });

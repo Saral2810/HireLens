@@ -23,10 +23,28 @@ const STT_CONTENT_TYPES = { wav: 'audio/wav', mp3: 'audio/mpeg', ogg: 'audio/ogg
 const TTS_CONTENT_TYPES = { mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg' };
 
 export class SpeechError extends Error {
-  constructor(message, status) {
+  /** @param {boolean} [retryable] true for a refusal that may pass on a second try (403/429/5xx, network) */
+  constructor(message, status, retryable = false) {
     super(message);
     this.name = 'SpeechError';
     this.status = status;
+    this.retryable = retryable;
+  }
+}
+
+// Gnani sometimes refuses a request for a moment (seen: 403 with no reason, ~0.1 s, then fine again).
+// Such requests are tried again after these pauses. Tests shorten them.
+export const speechRetry = { delaysMs: [600, 1500] };
+const isRetryableStatus = (status) => status === 403 || status === 408 || status === 429 || status >= 500;
+
+async function withRetry(task) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await task();
+    } catch (err) {
+      if (!err?.retryable || attempt >= speechRetry.delaysMs.length) throw err;
+      await new Promise(r => setTimeout(r, speechRetry.delaysMs[attempt]));
+    }
   }
 }
 
@@ -60,7 +78,7 @@ export function isSpeechConfigured() {
  * @returns {Promise<{ transcript: string, requestId: string|null, ms: number }>}
  */
 export function transcribe(audio, opts = {}) {
-  return prismaQueue(() => transcribeNow(audio, opts));
+  return prismaQueue(() => withRetry(() => transcribeNow(audio, opts)));
 }
 
 async function transcribeNow(audio, { format = 'wav', language, callId } = {}) {
@@ -80,15 +98,17 @@ async function transcribeNow(audio, { format = 'wav', language, callId } = {}) {
   try {
     const res = await fetch(STT_URL, { method: 'POST', headers: { 'X-API-Key-ID': apiKey() }, body: form });
     status = res.status;
-    body = await res.json().catch(() => null);
+    const raw = await res.text().catch(() => '');
+    try { body = JSON.parse(raw); } catch { body = null; }
     if (!res.ok || !body?.success) {
-      failure = `Prisma returned ${res.status}${body?.message ? `: ${body.message}` : ''}`;
-      throw new SpeechError(failure, res.status === 429 ? 429 : 502);
+      const reason = body?.message || body?.detail?.message || (typeof body?.detail === 'string' ? body.detail : '') || raw.slice(0, 200);
+      failure = `Prisma returned ${res.status}${reason ? `: ${reason}` : ''}`;
+      throw new SpeechError(failure, res.status === 429 ? 429 : 502, isRetryableStatus(res.status));
     }
     return { transcript: (body.transcript || '').trim(), requestId: body.request_id || null, ms: Date.now() - started };
   } catch (err) {
     failure = failure || err.message;
-    throw err instanceof SpeechError ? err : new SpeechError(`Prisma request failed: ${err.message}`, 502);
+    throw err instanceof SpeechError ? err : new SpeechError(`Prisma request failed: ${err.message}`, 502, true);
   } finally {
     logExternalCall({
       service: 'prisma', endpoint: STT_URL, method: 'POST', request_id: body?.request_id || generateRequestId(),
@@ -106,7 +126,7 @@ async function transcribeNow(audio, { format = 'wav', language, callId } = {}) {
  * @returns {Promise<{ audio: Buffer, contentType: string, ms: number }>}
  */
 export function speak(text, opts = {}) {
-  return timbreQueue(() => speakNow(text, opts));
+  return timbreQueue(() => withRetry(() => speakNow(text, opts)));
 }
 
 async function speakNow(text, { container = 'mp3', sampleRate = 24000, callId } = {}) {
@@ -139,14 +159,14 @@ async function speakNow(text, { container = 'mp3', sampleRate = 24000, callId } 
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
       failure = `Timbre returned ${res.status}${detail ? `: ${detail.slice(0, 300)}` : ''}`;
-      throw new SpeechError(failure, res.status === 429 ? 429 : 502);
+      throw new SpeechError(failure, res.status === 429 ? 429 : 502, isRetryableStatus(res.status));
     }
     const audio = Buffer.from(await res.arrayBuffer());
     size = audio.length;
     return { audio, contentType: TTS_CONTENT_TYPES[container] || 'application/octet-stream', ms: Date.now() - started };
   } catch (err) {
     failure = failure || err.message;
-    throw err instanceof SpeechError ? err : new SpeechError(`Timbre request failed: ${err.message}`, 502);
+    throw err instanceof SpeechError ? err : new SpeechError(`Timbre request failed: ${err.message}`, 502, true);
   } finally {
     logExternalCall({
       service: 'timbre', endpoint: TTS_URL, method: 'POST', request_id: generateRequestId(), session_id: callId,
