@@ -1,4 +1,4 @@
-# Gnani.ai Makefile
+# HR Screening Voice Agent Makefile
 
 .PHONY: setup lint format test test-int build run clean
 

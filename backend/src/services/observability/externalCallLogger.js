@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import db from '../../config/db.js';
 
 const REDACT_KEY_REGEX = /secret|password|token|api.?key/i;
-const REDACT_HEADER_NAMES = ['client-secret', 'xi-api-key', 'authorization', 'x-api-key'];
+const REDACT_HEADER_NAMES = ['client-secret', 'x-api-key-id', 'authorization', 'x-api-key'];
 
 /**
  * Generates a short random alphanumeric request ID.
@@ -68,16 +68,14 @@ export function redactPayload(val, keyName = '') {
 
 /**
  * Logs an external HTTP call to console with prefix [ExtCall][service=X endpoint=Y req=ID]
- * and persists to the external_call_logs table.
+ * and persists to the external_call_logs table (when Supabase is connected).
  *
  * @param {Object} options
- * @param {string} options.service - Service identifier (gnani, slack, llm, etc.)
+ * @param {string} options.service - Service identifier (prisma, timbre, llm, ...)
  * @param {string} options.endpoint - Outbound URL
  * @param {string} options.method - HTTP method (GET, POST, etc.)
  * @param {string} options.request_id - Correlation request ID
- * @param {string} [options.tenant_id] - Optional tenant ID
- * @param {string} [options.lead_id] - Optional lead ID
- * @param {string} [options.session_id] - Optional session ID
+ * @param {string} [options.session_id] - Optional screening call ID, so usage can be summed per call
  * @param {*} [options.payload] - Outbound request payload (headers/body)
  * @param {number} [options.response_status] - HTTP response status code
  * @param {*} [options.response_body] - Response body content or object
@@ -89,8 +87,6 @@ export async function logExternalCall({
   endpoint,
   method,
   request_id,
-  tenant_id,
-  lead_id,
   session_id,
   payload,
   response_status,
@@ -123,8 +119,6 @@ export async function logExternalCall({
     endpoint,
     method,
     request_id: reqId,
-    tenant_id: tenant_id || null,
-    lead_id: lead_id ? String(lead_id) : null,
     session_id: session_id ? String(session_id) : null,
     payload: sanitizedPayload || null,
     response_status: response_status !== undefined && response_status !== null ? Number(response_status) : null,
@@ -135,13 +129,8 @@ export async function logExternalCall({
   };
 
   try {
-    if (db.insertExternalCallLog) {
-      await db.insertExternalCallLog(record);
-    } else if (db.supabase) {
+    if (db.supabase) {
       await db.supabase.from('external_call_logs').insert([record]);
-    } else if (db.mockDb) {
-      db.mockDb.external_call_logs = db.mockDb.external_call_logs || [];
-      db.mockDb.external_call_logs.push({ id: crypto.randomUUID?.() || reqId, ...record });
     }
   } catch (dbErr) {
     if (dbErr.code !== 'PGRST205' && !dbErr.message?.includes('PGRST205') && !dbErr.message?.includes('does not exist')) {
