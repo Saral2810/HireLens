@@ -1,7 +1,8 @@
 -- ==============================================================================
 -- HR Screening Voice Agent — ONE-FILE DATABASE SETUP
 -- For a NEW Supabase project: paste into Supabase → SQL Editor → Run.
--- Generated from migrations/20261025_hr_screening_schema.sql + 20261025_rls_private_helpers.sql.
+-- Generated from migrations/20261025_hr_screening_schema.sql, 20261025_rls_private_helpers.sql,
+-- 20261025_candidate_resume_questions.sql (in that order).
 -- (Step 1 drops the old LeadX tables if present; on a fresh project it does nothing.)
 -- ==============================================================================
 
@@ -341,3 +342,11 @@ CREATE POLICY screening_files_hr_update ON storage.objects FOR UPDATE TO authent
   WITH CHECK (bucket_id IN ('resumes', 'recordings') AND (SELECT private.is_superadmin()));
 CREATE POLICY screening_files_hr_delete ON storage.objects FOR DELETE TO authenticated
   USING (bucket_id IN ('resumes', 'recordings') AND (SELECT private.is_superadmin()));
+
+
+-- Phase F: questions written from the candidate's resume, and recording consent.
+-- resume_questions: [{ "question_text": "...", "answer_type": "text" }, ...] written once after upload.
+-- consent_at: when the candidate agreed to the call being recorded and transcribed.
+ALTER TABLE public.candidates
+  ADD COLUMN IF NOT EXISTS resume_questions jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS consent_at timestamptz;

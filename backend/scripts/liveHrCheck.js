@@ -4,6 +4,7 @@
 // Run: node backend/scripts/liveHrCheck.js [baseUrl]
 import crypto from 'crypto';
 import db from '../src/config/db.js';
+import { makeTextPdf } from './makeTextPdf.js';
 
 const BASE = (process.argv[2] || 'http://localhost:3000').replace(/\/+$/, '');
 const tag = crypto.randomBytes(3).toString('hex');
@@ -125,6 +126,50 @@ async function run() {
     `${candMe.json?.role}, ${candMe.json?.candidate?.batch?.name}`);
   check('candidate is refused HR pages', (await api('GET', '/api/hr/batches', opened.token)).status === 403);
   check('candidate is refused the call-loop test', (await api('POST', '/api/spike/speak', opened.token, { text: 'hi' })).status === 403);
+  check('HR is refused candidate pages', (await api('GET', '/api/candidate/me', hr.token)).status === 403);
+
+  // ── Candidate: consent and resume (Phase F) ──
+  const portal = await api('GET', '/api/candidate/me', opened.token);
+  check('candidate portal starts at invited, no resume, no consent',
+    portal.json?.status === 'invited' && !portal.json.has_resume && !portal.json.consent_given);
+  check('consent must be explicit', (await api('POST', '/api/candidate/consent', opened.token, {})).status === 400);
+  const consent = await api('POST', '/api/candidate/consent', opened.token, { agree: true });
+  check('consent recorded', consent.json?.consent_given === true && !!consent.json.consent_at);
+
+  const uploadResume = async (bytes, name) => {
+    const form = new FormData();
+    form.append('resume', new Blob([bytes], { type: 'application/pdf' }), name);
+    const res = await fetch(`${BASE}/api/candidate/resume`, { method: 'POST', headers: { Authorization: `Bearer ${opened.token}` }, body: form });
+    return { status: res.status, json: await res.json().catch(() => null) };
+  };
+  const notPdf = await uploadResume(Buffer.from('this is not a pdf'), 'resume.pdf');
+  check('a non-PDF upload is rejected', notPdf.status === 400, notPdf.json?.message);
+
+  const resumePdf = makeTextPdf([
+    'Test Candidate 1 - Backend Engineer (made-up resume for testing)',
+    'Experience: 3 years at Example Logistics (Java, Spring Boot, MySQL)',
+    'Built a shipment tracking API used by 40 warehouses',
+    'Reduced report generation time from 2 hours to 10 minutes with batch jobs',
+    'Project: chatbot for delivery status using Python and Dialogflow',
+    'Skills: Java, Spring Boot, MySQL, Python, REST APIs, Docker'
+  ]);
+  const uploaded = await uploadResume(resumePdf, 'resume.pdf');
+  check('resume uploaded and questions written from it',
+    uploaded.status === 200 && uploaded.json?.readable && uploaded.json?.questions_from === 'resume'
+      && uploaded.json.questions_ready >= 3 && uploaded.json.questions_ready <= 5,
+    `${uploaded.json?.questions_ready} questions from ${uploaded.json?.questions_from}`);
+
+  const { data: row } = await db.supabase.from('candidates').select('status, resume_path, resume_questions, resume_text').eq('id', cand1.id).single();
+  check('database: status resume_uploaded, resume stored', row?.status === 'resume_uploaded' && row.resume_path === `${batchId}/${cand1.id}.pdf` && /shipment tracking/.test(row.resume_text || ''));
+  console.log('      resume questions:\n' + (row?.resume_questions || []).map((q, i) => `        ${i + 1}. ${q.question_text}`).join('\n'));
+  const { data: files } = await db.supabase.storage.from('resumes').list(batchId);
+  check('PDF saved in private storage', files?.some(f => f.name === `${cand1.id}.pdf`));
+
+  const after = await api('GET', '/api/candidate/me', opened.token);
+  check('candidate sees resume and consent done, questions not exposed',
+    after.json?.has_resume && after.json.consent_given && after.json.status === 'resume_uploaded' && !('resume_questions' in after.json));
+  check('HR cannot remove a candidate who has started', (await api('DELETE', `/api/hr/candidates/${cand1.id}`, hr.token)).status === 409);
+  check('HR cannot delete a batch with started candidates', (await api('DELETE', `/api/hr/batches/${batchId}`, hr.token)).status === 409);
 
   const bulk = await api('POST', `/api/hr/batches/${batchId}/invite-links`, hr.token);
   check('bulk invite links for everyone not finished', bulk.json?.links?.length === 2 && bulk.json.links.every(l => l.invite_link));
@@ -139,6 +184,14 @@ async function run() {
 
 async function cleanup() {
   if (batchId) {
+    // Storage files are not removed by the database cascade.
+    for (const bucket of ['resumes', 'recordings']) {
+      const { data: files } = await db.supabase.storage.from(bucket).list(batchId);
+      if (files?.length) {
+        const { error } = await db.supabase.storage.from(bucket).remove(files.map(f => `${batchId}/${f.name}`));
+        console.log(error ? `cleanup: ${bucket} delete failed: ${error.message}` : `cleanup: ${files.length} file(s) removed from ${bucket}`);
+      }
+    }
     const { error } = await db.supabase.from('batches').delete().eq('id', batchId);
     console.log(error ? `cleanup: batch delete failed: ${error.message}` : 'cleanup: test batch deleted (questions and candidates cascade)');
   }
