@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  currentStep, questionAfter, isStale, isNotReady, answerRow, line, recordingExtension, STALE_CALL_MS
+  currentStep, questionAfter, isStale, isNotReady, answerRow, line, recordingExtension, STALE_CALL_MS,
+  retriesLeft, MAX_CALL_ATTEMPTS, NOT_READY_REASON, START_FAILED_PREFIX
 } from '../../backend/src/services/callFlow.js';
 import { decideTurn, summarizeCall } from '../../backend/src/services/brain.js';
 import { speakCached, clearAudioCache } from '../../backend/src/services/gnaniSpeech.js';
@@ -91,4 +92,14 @@ test('repeated lines are spoken once and then served from the cache', async () =
   const second = await speakCached('Aapka notice period kitna hai?', {}, { speakFn });
   await speakCached('Aapki current CTC kitni hai?', {}, { speakFn });
   assert.deepEqual([first.cached, second.cached, second.ms, calls], [false, true, 0, 2]);
+});
+
+test('a candidate gets 3 calls; not-ready and failed starts do not count, a completed call ends it', () => {
+  const failed = (failure_reason = 'The call stopped because of a technical problem.') => ({ status: 'failed', failure_reason });
+  assert.equal(MAX_CALL_ATTEMPTS, 3);
+  assert.equal(retriesLeft([]), 3);
+  assert.equal(retriesLeft([failed()]), 2);
+  assert.equal(retriesLeft([failed(), failed(NOT_READY_REASON), failed(`${START_FAILED_PREFIX} Timbre returned 502`)]), 2);
+  assert.equal(retriesLeft([failed(), failed(), failed(), failed()]), 0);
+  assert.equal(retriesLeft([failed(), { status: 'completed' }]), 0);
 });

@@ -84,7 +84,7 @@ const db = {
   async getCandidateForUser(userId) {
     const rows = unwrap(await requireClient()
       .from('candidates')
-      .select('id, batch_id, name, email, status, consent_at, resume_path, resume_questions, batch:batches(id, name, batch_date, job_role, company_name, job_description)')
+      .select('id, batch_id, name, email, status, failure_reason, consent_at, resume_path, resume_questions, batch:batches(id, name, batch_date, job_role, company_name, job_description)')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(1));

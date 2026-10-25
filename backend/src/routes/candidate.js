@@ -4,6 +4,7 @@ import db from '../config/db.js';
 import { extractResumeText, MAX_RESUME_BYTES } from '../services/resumeParser.js';
 import { writeResumeQuestions } from '../services/brain.js';
 import { expireStaleCall } from './call.js';
+import { retriesLeft } from '../services/callFlow.js';
 
 /**
  * Candidate API. Mounted at /api/candidate behind requireAuth + requireRole('candidate').
@@ -24,11 +25,13 @@ async function loadOwnCandidate(req, res) {
   return candidate;
 }
 
-function publicView(candidate) {
+function publicView(candidate, retries = 0) {
   return {
     id: candidate.id,
     name: candidate.name,
     status: candidate.status,
+    failure_reason: candidate.status === 'failed' ? candidate.failure_reason || null : null,
+    retries_left: candidate.status === 'failed' ? retries : 0,
     consent_given: !!candidate.consent_at,
     has_resume: !!candidate.resume_path,
     batch: candidate.batch && {
@@ -44,7 +47,8 @@ router.get('/me', async (req, res, next) => {
     const candidate = await loadOwnCandidate(req, res);
     if (!candidate) return;
     await expireStaleCall(candidate);
-    res.json(publicView(candidate));
+    const retries = candidate.status === 'failed' ? retriesLeft(await db.listCallsForCandidates([candidate.id])) : 0;
+    res.json(publicView(candidate, retries));
   } catch (err) { next(err); }
 });
 

@@ -231,7 +231,7 @@ export const CallPanel: React.FC<Props> = ({ ready, onStart, onFinished }) => {
         <button
           className="btn btn-lg btn-danger"
           disabled={phase === 'saving' || phase === 'connecting'}
-          onClick={() => { if (window.confirm('End the call now? Your answers so far are kept, but you cannot restart the call yourself.')) stopEverything('ended_by_candidate'); }}
+          onClick={() => { if (window.confirm('End the call now? Your answers so far are kept, and you can take the call again later from the start.')) stopEverything('ended_by_candidate'); }}
         >
           <PhoneOff size={16} /> End call
         </button>

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Check, CheckCircle2, Clock, Info, Languages, PhoneOff } from 'lucide-react';
+import { Check, CheckCircle2, Clock, Info, Languages, PhoneOff, RotateCcw } from 'lucide-react';
 import { api } from '../../services/api';
 import { CandidatePortal } from '../../types';
 import { ResumeUpload } from '../../components/candidate/ResumeUpload';
@@ -18,7 +18,7 @@ const FINISHED: Partial<Record<CandidatePortal['status'], { icon: React.ReactNod
   },
   failed: {
     icon: <PhoneOff size={22} />, title: 'Your call did not finish',
-    text: 'The answers you gave are saved. Please contact the HR team if you would like another try.'
+    text: 'The answers you gave are saved. You have used all your tries, so please contact the HR team if you would like another one.'
   }
 };
 
@@ -40,6 +40,7 @@ export const CandidateHomePage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [inCall, setInCall] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
   const load = useCallback(async () => {
     try { setMe(await api.candidateMe()); } catch (err: any) { setError(err.message); }
@@ -57,6 +58,20 @@ export const CandidateHomePage: React.FC = () => {
       setError(err.message);
     } finally {
       setConsentBusy(false);
+    }
+  };
+
+  const retry = async () => {
+    setRetrying(true);
+    setError(null);
+    try {
+      await api.retryCall();
+      setNotice('You can take the call again. Check your microphone, then start the call.');
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setRetrying(false);
     }
   };
 
@@ -99,7 +114,19 @@ export const CandidateHomePage: React.FC = () => {
         <div className="card card-pad" style={{ textAlign: 'center', padding: 32 }}>
           <div className="empty-icon" style={me.status === 'completed' ? { background: 'var(--green-soft)', color: 'var(--green)' } : undefined}>{finished.icon}</div>
           <h2>{finished.title}</h2>
-          <p className="muted mt-sm" style={{ maxWidth: 440, margin: '8px auto 0' }}>{finished.text}</p>
+          {me.status === 'failed' && me.retries_left > 0 ? (
+            <>
+              <p className="muted" style={{ maxWidth: 460, margin: '8px auto 0' }}>
+                {me.failure_reason ? `${me.failure_reason} ` : ''}The answers you gave are saved. You can take the call again from the start.
+              </p>
+              <button className="btn btn-primary btn-lg mt" onClick={retry} disabled={retrying}>
+                <RotateCcw size={16} /> {retrying ? 'Getting ready…' : 'Try the call again'}
+              </button>
+              <p className="tiny muted mt-sm">{me.retries_left} {me.retries_left === 1 ? 'try' : 'tries'} left</p>
+            </>
+          ) : (
+            <p className="muted" style={{ maxWidth: 440, margin: '8px auto 0' }}>{finished.text}</p>
+          )}
         </div>
       ) : (
         <div className="steps">

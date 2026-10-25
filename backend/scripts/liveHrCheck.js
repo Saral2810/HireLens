@@ -352,13 +352,27 @@ async function hrResults(hrToken, cand1Id, otherLink) {
   const form = new FormData();
   form.append('resume', new Blob([makeTextPdf(['Test Candidate 2 (made-up)', 'Fresher, B.Tech 2026', 'Project: weather app in React'])], { type: 'application/pdf' }), 'resume.pdf');
   await fetch(`${BASE}/api/candidate/resume`, { method: 'POST', headers: { Authorization: `Bearer ${opened.token}` }, body: form });
-  const started = await api('POST', '/api/candidate/call/start', opened.token);
-  const ended = await api('POST', '/api/candidate/call/end', opened.token, { reason: 'ended_by_candidate' });
-  const failed = await api('GET', '/api/candidate/me', opened.token);
-  check('ending a call early marks the candidate failed', started.status === 200 && ended.json?.ended === true && failed.json?.status === 'failed');
+  const startAndStop = async (reason) => {
+    const started = await api('POST', '/api/candidate/call/start', opened.token);
+    const ended = await api('POST', '/api/candidate/call/end', opened.token, { reason });
+    return { started: started.status, ended: ended.json?.ended, me: (await api('GET', '/api/candidate/me', opened.token)).json };
+  };
+  const first = await startAndStop('client_error');
+  check('a call that stops part-way marks the candidate failed, with 2 tries left',
+    first.started === 200 && first.ended === true && first.me?.status === 'failed' && first.me.retries_left === 2 && /technical problem/.test(first.me.failure_reason || ''),
+    `${first.me?.retries_left} left: ${first.me?.failure_reason}`);
+  const selfRetry = await api('POST', '/api/candidate/call/retry', opened.token);
+  check('the candidate can retry on their own', selfRetry.status === 200 && selfRetry.json?.status === 'resume_uploaded' && selfRetry.json.retries_left === 1);
+  check('retry is refused when nothing has stopped', (await api('POST', '/api/candidate/call/retry', opened.token)).status === 409);
+  await startAndStop('left_page');
+  await api('POST', '/api/candidate/call/retry', opened.token);
+  const third = await startAndStop('ended_by_candidate');
+  const noMore = await api('POST', '/api/candidate/call/retry', opened.token);
+  check('after 3 calls the candidate must ask HR', third.me?.retries_left === 0 && noMore.status === 409, noMore.json?.message);
+
   const retake = await api('POST', `/api/hr/candidates/${otherLink.candidate_id}/allow-retake`, hrToken);
   const again = await api('GET', '/api/candidate/me', opened.token);
-  check('HR retake lets the candidate start again', retake.status === 200 && again.json?.status === 'resume_uploaded', retake.json?.status);
+  check('HR retake still lets the candidate start again', retake.status === 200 && again.json?.status === 'resume_uploaded', retake.json?.status);
   const after = (await api('GET', `/api/hr/batches/${batchId}/results`, hrToken)).json.rows.find(r => r.candidate_id === otherLink.candidate_id);
-  check('results keep the earlier attempt', after?.attempts === 1 && after.call?.status === 'failed');
+  check('results keep every earlier attempt', after?.attempts === 3 && after.call?.status === 'failed', `${after?.attempts} attempts`);
 }

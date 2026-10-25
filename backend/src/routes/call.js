@@ -6,7 +6,7 @@ import { decideTurn, summarizeCall } from '../services/brain.js';
 import { buildQuestionPlan } from '../services/questionPlan.js';
 import {
   currentStep, questionAfter, isStale, isNotReady, line, answerRow, recordingExtension,
-  RECORDING_CONTENT_TYPES, END_REASONS, NOT_READY_LINE, MOVE_ON_LINE
+  RECORDING_CONTENT_TYPES, END_REASONS, NOT_READY_LINE, MOVE_ON_LINE, NOT_READY_REASON, START_FAILED_PREFIX, retriesLeft
 } from '../services/callFlow.js';
 
 /**
@@ -16,6 +16,7 @@ import {
  *   POST /turn       → one answer (WAV) in, the next line(s) out; saves answers as it goes
  *   POST /recording  → the whole-call recording (WebM/OGG) after the call ends
  *   POST /end        → ends a call early (End call button, page closed, browser error)
+ *   POST /retry      → after a call that stopped part-way, lets the candidate start again (limited)
  *
  * The server keeps the call state (which question, which attempt), so the browser cannot skip ahead.
  * A turn is processed fully (Prisma → brain → Timbre) before anything is saved, so a failed request
@@ -107,7 +108,7 @@ router.post('/start', async (req, res, next) => {
       res.json({ call_id: call.id, total_questions: plan.questions.length, position: first.position, lines, done: false });
     } catch (err) {
       // A service error before the first question is not the candidate's fault: let them try again.
-      if (call) await db.updateCall(call.id, { status: 'failed', failure_reason: `Could not start: ${err.message}`, ended_at: new Date().toISOString() }).catch(() => {});
+      if (call) await db.updateCall(call.id, { status: 'failed', failure_reason: `${START_FAILED_PREFIX} ${err.message}`, ended_at: new Date().toISOString() }).catch(() => {});
       await db.updateCandidate(candidate.id, { status: 'resume_uploaded' }).catch(() => {});
       throw err;
     }
@@ -182,7 +183,7 @@ router.post('/turn', answerUpload.single('audio'), async (req, res, next) => {
     const ended = now.toISOString();
     if (outcome === 'not_ready') {
       // Not the candidate's last chance: they can start again when ready.
-      await db.updateCall(call.id, { transcript: updated, status: 'failed', failure_reason: 'The candidate was not ready to talk.', ended_at: ended });
+      await db.updateCall(call.id, { transcript: updated, status: 'failed', failure_reason: NOT_READY_REASON, ended_at: ended });
       await db.updateCandidate(candidate.id, { status: 'resume_uploaded' });
     } else if (outcome === 'completed') {
       await db.updateCall(call.id, { transcript: updated, status: 'completed', ended_at: ended });
@@ -235,6 +236,30 @@ router.post('/end', async (req, res, next) => {
     const reason = END_REASONS[req.body?.reason] || END_REASONS.client_error;
     await failCall(call, candidate.id, reason);
     res.json({ ended: true });
+  } catch (err) { next(err); }
+});
+
+/**
+ * POST /api/candidate/call/retry → { status, retries_left }
+ * After a call that stopped part-way (error, page closed, ended early), the candidate may start
+ * again from the beginning, up to MAX_CALL_ATTEMPTS calls in total. Earlier calls stay saved.
+ */
+router.post('/retry', async (req, res, next) => {
+  try {
+    const candidate = await loadOwnCandidate(req, res);
+    if (!candidate) return;
+    await expireStaleCall(candidate);
+    if (candidate.status !== 'failed') {
+      return conflict(res, candidate.status === 'completed' ? 'Your call is already complete.' : 'There is no stopped call to retry.');
+    }
+    const left = retriesLeft(await db.listCallsForCandidates([candidate.id]));
+    if (left <= 0) return conflict(res, 'You have used all your attempts. Please contact the HR team for another try.');
+
+    const updated = await db.updateCandidateIfStatus(candidate.id, 'failed', {
+      status: candidate.resume_path ? 'resume_uploaded' : 'invited', failure_reason: null
+    });
+    if (!updated) return conflict(res, 'Your status changed. Reload the page.');
+    res.json({ status: updated.status, retries_left: left - 1 });
   } catch (err) { next(err); }
 });
 

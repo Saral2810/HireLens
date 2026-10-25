@@ -11,6 +11,19 @@ export const STALE_CALL_MS = 3 * 60 * 1000;
 
 export const NOT_READY_LINE = 'Koi baat nahi! Jab aap ready hon, tab is page par wapas aakar Start call dabaiye. Dhanyavaad.';
 export const MOVE_ON_LINE = 'Koi baat nahi, aage badhte hain.';
+export const NOT_READY_REASON = 'The candidate was not ready to talk.';
+export const START_FAILED_PREFIX = 'Could not start:';
+
+// A candidate may take the call this many times on their own; HR can allow more with Retake.
+// Calls ended with "not ready" or that failed before the first question do not count.
+export const MAX_CALL_ATTEMPTS = 3;
+
+/** How many more times the candidate may start the call themselves (0 once a call is completed). */
+export function retriesLeft(calls = []) {
+  if (calls.some(c => c.status === 'completed')) return 0;
+  const used = calls.filter(c => c.failure_reason !== NOT_READY_REASON && !String(c.failure_reason || '').startsWith(START_FAILED_PREFIX)).length;
+  return Math.max(0, MAX_CALL_ATTEMPTS - used);
+}
 
 // Why a call ended early; the client may only send these.
 export const END_REASONS = {
