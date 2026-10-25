@@ -1,21 +1,21 @@
 import React from 'react';
-import { AudioLines, LogOut, Moon, Sun } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { AudioLines, FolderKanban, LayoutDashboard, LogOut, Moon, Sun, Users } from 'lucide-react';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
+import { isHrRole } from '../../types';
 
-/** Logo mark used in the header and on the sign-in screens. */
-export const Brand: React.FC<{ to?: string }> = ({ to }) => {
-  const inner = (
-    <>
-      <span className="brand-mark"><AudioLines size={17} /></span>
-      <span>
-        HR Screening
-        <span className="brand-sub">Voice agent · Gnani</span>
-      </span>
-    </>
-  );
-  return to ? <Link to={to} className="brand">{inner}</Link> : <div className="brand">{inner}</div>;
-};
+export const ROLE_LABELS = { superadmin: 'Admin', recruiter: 'Recruiter', candidate: 'Candidate' } as const;
+
+/** Logo mark used in the header and on public pages. */
+export const Brand: React.FC<{ to?: string; sub?: boolean }> = ({ to = '/', sub = true }) => (
+  <Link to={to} className="brand">
+    <span className="brand-mark"><AudioLines size={16} /></span>
+    <span>
+      HR Screening
+      {sub && <span className="brand-sub">voice agent · gnani</span>}
+    </span>
+  </Link>
+);
 
 export const ThemeToggle: React.FC = () => {
   const { theme, setTheme } = useAppStore();
@@ -34,23 +34,31 @@ export const AppHeader: React.FC = () => {
   const navigate = useNavigate();
   if (!currentUser) return null;
 
-  const isHr = currentUser.role === 'superadmin';
+  const hr = isHrRole(currentUser.role);
   const display = currentUser.name || currentUser.email;
   const signOut = () => {
     logout();
-    navigate(isHr ? '/login' : '/invite', { replace: true });
+    navigate('/login', { replace: true });
   };
+  const navClass = ({ isActive }: { isActive: boolean }) => (isActive ? 'active' : undefined);
 
   return (
     <header className="topbar">
-      <Brand to={isHr ? '/hr' : '/candidate'} />
+      <Brand to={hr ? '/hr' : '/candidate'} />
+      {hr && (
+        <nav className="nav" aria-label="Main">
+          <NavLink to="/hr" end className={navClass}><LayoutDashboard size={15} /><span>Dashboard</span></NavLink>
+          <NavLink to="/hr/campaigns" className={navClass}><FolderKanban size={15} /><span>Campaigns</span></NavLink>
+          {currentUser.role === 'superadmin' && <NavLink to="/hr/team" className={navClass}><Users size={15} /><span>Team</span></NavLink>}
+        </nav>
+      )}
       <div className="row spacer">
         <ThemeToggle />
         <div className="user-chip">
           <span className="avatar" aria-hidden="true">{initials(display)}</span>
           <span className="user-name">
             <span className="strong" style={{ display: 'block', lineHeight: 1.2 }}>{display}</span>
-            <span className="tiny muted">{isHr ? 'HR team' : 'Candidate'}</span>
+            <span className="role-tag">{ROLE_LABELS[currentUser.role]}</span>
           </span>
         </div>
         <button className="btn btn-ghost btn-sm" onClick={signOut} aria-label="Sign out" title="Sign out">

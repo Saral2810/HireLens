@@ -1,17 +1,21 @@
 import React, { useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
-import { LoginModal } from './components/auth/LoginModal';
+import { isHrRole } from './types';
 import { AppHeader } from './components/layout/AppHeader';
-import { InviteRequiredPage } from './pages/InviteRequiredPage';
-import { BatchesPage } from './pages/hr/BatchesPage';
-import { BatchDetailPage } from './pages/hr/BatchDetailPage';
+import { LandingPage } from './pages/public/LandingPage';
+import { LoginPage } from './pages/public/LoginPage';
+import { DashboardPage } from './pages/hr/DashboardPage';
+import { CampaignsPage } from './pages/hr/CampaignsPage';
+import { NewCampaignPage } from './pages/hr/NewCampaignPage';
+import { CampaignPage } from './pages/hr/CampaignPage';
+import { TeamPage } from './pages/hr/TeamPage';
 import { CandidateHomePage } from './pages/candidate/CandidateHomePage';
 
-// Two portals: HR (super-admin) under /hr, candidates under /candidate.
-// Each role is sent to its own area; the backend enforces the same split.
+// Three roles, three areas: Admin and Recruiter under /hr, candidates under /candidate.
+// The backend enforces the same split (and recruiters only reach their own campaigns).
 export const App: React.FC = () => {
-  const { currentUser, sessionChecked, inviteError, initSession } = useAppStore();
+  const { currentUser, sessionChecked, initSession } = useAppStore();
   const location = useLocation();
 
   useEffect(() => {
@@ -21,24 +25,34 @@ export const App: React.FC = () => {
   if (!sessionChecked) return null;
 
   if (!currentUser) {
-    const candidateArea = ['/candidate', '/invite'].some(p => location.pathname.startsWith(p));
-    return candidateArea || inviteError ? <InviteRequiredPage /> : <LoginModal />;
+    const wantsCandidate = location.pathname.startsWith('/candidate') || location.pathname.startsWith('/auth') || location.pathname.startsWith('/invite');
+    return (
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="*" element={<Navigate to={wantsCandidate ? '/login?as=candidate' : location.pathname.startsWith('/hr') ? '/login' : '/'} replace />} />
+      </Routes>
+    );
   }
 
-  const home = currentUser.role === 'superadmin' ? '/hr' : '/candidate';
+  const hr = isHrRole(currentUser.role);
+  const home = hr ? '/hr' : '/candidate';
 
   return (
     <div className="app">
       <AppHeader />
       <main className="container">
         <Routes>
-          {currentUser.role === 'superadmin' && (
+          {hr && (
             <>
-              <Route path="/hr" element={<BatchesPage />} />
-              <Route path="/hr/batches/:batchId" element={<BatchDetailPage />} />
+              <Route path="/hr" element={<DashboardPage />} />
+              <Route path="/hr/campaigns" element={<CampaignsPage />} />
+              <Route path="/hr/campaigns/new" element={<NewCampaignPage />} />
+              <Route path="/hr/campaigns/:campaignId" element={<CampaignPage />} />
+              {currentUser.role === 'superadmin' && <Route path="/hr/team" element={<TeamPage />} />}
             </>
           )}
-          {currentUser.role === 'candidate' && <Route path="/candidate/*" element={<CandidateHomePage />} />}
+          {!hr && <Route path="/candidate/*" element={<CandidateHomePage />} />}
           <Route path="*" element={<Navigate to={home} replace />} />
         </Routes>
       </main>

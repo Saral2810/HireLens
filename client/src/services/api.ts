@@ -1,4 +1,4 @@
-import { AnswerType, Batch, BatchDetail, BatchResults, CallDetail, CallEndReason, CallStartResult, CallTurnResult, CandidatePortal, HrQuestion, InviteLinkResult, ResumeUploadResult, User } from '../types';
+import { Analytics, AnswerType, Batch, BatchDetail, BatchResults, CallDetail, CallEndReason, Screening, StaffMember, CallStartResult, CallTurnResult, CandidatePortal, HrQuestion, InviteLinkResult, ResumeUploadResult, User } from '../types';
 
 const TOKEN_KEY = 'hr_auth_token';
 
@@ -49,6 +49,61 @@ class ApiService {
 
   async getMe(): Promise<User> {
     return this.request<User>('/api/auth/me');
+  }
+
+  // ── Candidate sign-in (Google or email code) ──
+  async googleSignIn(): Promise<{ enabled: boolean; url: string | null }> {
+    return this.request('/api/auth/google');
+  }
+
+  async sendEmailCode(email: string): Promise<{ sent: boolean; message: string }> {
+    return this.request('/api/auth/email-code', { method: 'POST', body: JSON.stringify({ email }) });
+  }
+
+  async verifyEmailCode(email: string, code: string): Promise<{ token: string; user: User }> {
+    const res = await this.request<{ token: string; user: User }>('/api/auth/email-code/verify', { method: 'POST', body: JSON.stringify({ email, code }) });
+    if (res.token) this.setAuthToken(res.token);
+    return res;
+  }
+
+  async screenings(): Promise<Screening[]> {
+    return this.request('/api/candidate/screenings');
+  }
+
+  // ── HR dashboard, campaigns, team ──
+  async analytics(): Promise<Analytics> {
+    return this.request('/api/hr/analytics');
+  }
+
+  async runCampaign(batchId: string): Promise<Batch> {
+    return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/run`, { method: 'POST' });
+  }
+
+  async closeCampaign(batchId: string): Promise<Batch> {
+    return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/close`, { method: 'POST' });
+  }
+
+  /** Reads name + email rows from an .xlsx or .csv file (nothing is saved). */
+  async parseCandidatesFile(file: File): Promise<{ rows: { name: string; email: string }[]; header: boolean }> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    return this.request('/api/hr/parse-candidates', { method: 'POST', body: form });
+  }
+
+  async team(): Promise<StaffMember[]> {
+    return this.request('/api/hr/team');
+  }
+
+  async addTeamMember(fields: { name: string; email: string; password: string; role: 'superadmin' | 'recruiter' }): Promise<StaffMember> {
+    return this.request('/api/hr/team', { method: 'POST', body: JSON.stringify(fields) });
+  }
+
+  async setTeamRole(userId: string, role: 'superadmin' | 'recruiter'): Promise<StaffMember> {
+    return this.request(`/api/hr/team/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify({ role }) });
+  }
+
+  async removeTeamMember(userId: string): Promise<void> {
+    await this.request(`/api/hr/team/${encodeURIComponent(userId)}`, { method: 'DELETE' });
   }
 
   // ── Candidate ──

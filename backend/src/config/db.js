@@ -75,20 +75,61 @@ const db = {
   async getCandidate(candidateId) {
     return unwrap(await requireClient()
       .from('candidates')
-      .select('id, batch_id, user_id, name, email, status, resume_path, batch:batches(id, name, batch_date, job_role, company_name)')
+      .select('id, batch_id, user_id, name, email, status, resume_path, batch:batches(id, name, batch_date, job_role, company_name, created_by, status)')
       .eq('id', candidateId)
       .maybeSingle());
   },
 
-  /** The signed-in candidate's most recent candidate row (with batch), or null. */
+  /**
+   * The signed-in candidate's most recent screening in a live or closed campaign (draft campaigns
+   * are not visible to candidates yet), or null.
+   */
   async getCandidateForUser(userId) {
     const rows = unwrap(await requireClient()
       .from('candidates')
-      .select('id, batch_id, name, email, status, failure_reason, consent_at, resume_path, resume_questions, batch:batches(id, name, batch_date, job_role, company_name, job_description)')
+      .select('id, batch_id, name, email, status, failure_reason, consent_at, resume_path, resume_questions, batch:batches!inner(id, name, batch_date, job_role, company_name, job_description, status)')
       .eq('user_id', userId)
+      .neq('batch.status', 'draft')
       .order('created_at', { ascending: false })
       .limit(1));
     return rows?.[0] || null;
+  },
+
+  /** Every screening of the signed-in candidate (newest first), for their dashboard. */
+  async listScreeningsForUser(userId) {
+    return unwrap(await requireClient()
+      .from('candidates')
+      .select('id, status, created_at, batch:batches!inner(id, name, job_role, company_name, status)')
+      .eq('user_id', userId)
+      .neq('batch.status', 'draft')
+      .order('created_at', { ascending: false }));
+  },
+
+  /**
+   * Links candidate rows added by HR (matched by email) to the account that just proved it owns
+   * that email (Google or email code). Only rows not yet linked to anyone are claimed.
+   * @returns {Promise<number>} rows linked
+   */
+  async claimCandidatesByEmail(userId, email) {
+    if (!email) return 0;
+    const rows = unwrap(await requireClient()
+      .from('candidates')
+      .update({ user_id: userId })
+      .eq('email', String(email).trim().toLowerCase())
+      .is('user_id', null)
+      .select('id'));
+    return rows?.length || 0;
+  },
+
+  /** True if this email has a screening in a live campaign (used before sending a sign-in code). */
+  async hasLiveScreening(email) {
+    const rows = unwrap(await requireClient()
+      .from('candidates')
+      .select('id, batch:batches!inner(status)')
+      .eq('email', String(email).trim().toLowerCase())
+      .eq('batch.status', 'live')
+      .limit(1));
+    return (rows?.length || 0) > 0;
   },
 
   async linkCandidateUser(candidateId, userId) {
@@ -97,11 +138,17 @@ const db = {
 
   // ── Batches (Phase E) ──
 
-  /** All batches, newest first, with candidate counts per status. */
-  async listBatches() {
+  /**
+   * Batches (campaigns), newest first, with candidate counts per status.
+   * @param {{ ownerId?: string }} [scope] only batches created by this user (recruiters)
+   */
+  async listBatches({ ownerId } = {}) {
     const client = requireClient();
-    const batches = unwrap(await client.from('batches').select('*').order('batch_date', { ascending: false }).order('created_at', { ascending: false }));
-    const rows = unwrap(await client.from('candidates').select('batch_id, status'));
+    let query = client.from('batches').select('*').order('batch_date', { ascending: false }).order('created_at', { ascending: false });
+    if (ownerId) query = query.eq('created_by', ownerId);
+    const batches = unwrap(await query);
+    if (!batches?.length) return [];
+    const rows = unwrap(await client.from('candidates').select('batch_id, status').in('batch_id', batches.map(b => b.id)));
     const counts = {};
     for (const r of rows || []) {
       counts[r.batch_id] ??= { total: 0, invited: 0, resume_uploaded: 0, in_call: 0, completed: 0, failed: 0 };
@@ -289,6 +336,35 @@ const db = {
     const { data, error } = await requireClient().storage.from(bucket).createSignedUrl(path, seconds);
     if (error) throw error;
     return data.signedUrl;
+  },
+
+  // ── Dashboard and team (UI rebuild) ──
+
+  /** Candidates of these batches, light columns only (for analytics). */
+  async listCandidatesForBatches(batchIds) {
+    if (!batchIds.length) return [];
+    return unwrap(await requireClient()
+      .from('candidates')
+      .select('id, batch_id, name, email, status, created_at')
+      .in('batch_id', batchIds));
+  },
+
+  /** HR accounts (Admin and Recruiter) for the Team page. */
+  async listStaff() {
+    return unwrap(await requireClient()
+      .from('profiles')
+      .select('id, name, email, role, created_at')
+      .in('role', ['superadmin', 'recruiter'])
+      .order('created_at'));
+  },
+
+  async updateProfile(userId, fields) {
+    return unwrap(await requireClient().from('profiles').update(fields).eq('id', userId).select('id, name, email, role').maybeSingle());
+  },
+
+  /** Moves every campaign of one HR account to another (before removing an account). */
+  async reassignBatches(fromUserId, toUserId) {
+    unwrap(await requireClient().from('batches').update({ created_by: toUserId }).eq('created_by', fromUserId));
   }
 };
 

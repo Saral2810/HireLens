@@ -75,8 +75,25 @@ test('results, call detail, export and retake are HR-only', async () => {
     assert.equal((await call(method, path, 'test:candidate:c1')).status, 403, path);
     assert.equal((await call(method, path, 'test:superadmin:hr1')).status, 503, path);
   }
-  // A bad export format is rejected before the database is touched.
-  assert.equal((await call('GET', `/api/hr/batches/${id}/export?format=pdf`, 'test:superadmin:hr1')).status, 400);
+  // Access to the campaign is checked before anything else (needs the database, absent in tests).
+  assert.equal((await call('GET', `/api/hr/batches/${id}/export?format=pdf`, 'test:superadmin:hr1')).status, 503);
+});
+
+test('recruiters reach HR endpoints; team management is Admin-only; the analytics and parse routes exist', async () => {
+  const send = (method, path, token) => fetch(base + path, { method, headers: { Authorization: `Bearer ${token}` } });
+  assert.equal((await send('GET', '/api/hr/batches', 'test:recruiter:r1')).status, 503);
+  assert.equal((await send('GET', '/api/hr/analytics', 'test:recruiter:r1')).status, 503);
+  assert.equal((await send('GET', '/api/hr/team', 'test:recruiter:r1')).status, 403);
+  assert.equal((await send('GET', '/api/hr/team', 'test:superadmin:a1')).status, 503);
+  assert.equal((await send('GET', '/api/hr/analytics', 'test:candidate:c1')).status, 403);
+  // No file: rejected before any database work.
+  assert.equal((await send('POST', '/api/hr/parse-candidates', 'test:recruiter:r1')).status, 400);
+});
+
+test('candidate sign-in endpoints validate input', async () => {
+  const post = (path, body) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  assert.equal((await post('/api/auth/email-code', { email: 'not-an-email' })).status, 400);
+  assert.equal((await post('/api/auth/email-code/verify', { email: 'a@b.co', code: '12' })).status, 400);
 });
 
 test('login requires email and password', async () => {

@@ -88,7 +88,7 @@ export const ResultsTable: React.FC<{ batchId: string; onCandidatesChanged?: () 
         <div className="stat-row" style={{ marginBottom: 0 }}>
           <div className="stat"><div className="stat-value">{completed.length}<span className="muted" style={{ fontSize: 15 }}> / {rows.length}</span></div><div className="stat-label">Calls completed</div></div>
           <div className="stat"><div className="stat-value">{avg ?? '—'}</div><div className="stat-label">Average fit score</div></div>
-          <div className="stat"><div className="stat-value" style={{ color: 'var(--green)' }}>{scores.filter(s => s >= 70).length}</div><div className="stat-label">Strong fits (70+)</div></div>
+          <div className="stat"><div className="stat-value">{scores.filter(s => s >= 70).length}</div><div className="stat-label">Strong fits (70+)</div></div>
           <div className="stat"><div className="stat-value">{rows.filter(r => r.status === 'failed').length}</div><div className="stat-label">Did not finish</div></div>
         </div>
       )}

@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Check, CheckCircle2, Clock, Info, Languages, PhoneOff, RotateCcw } from 'lucide-react';
+import { Check, CheckCircle2, Clock, Info, Languages, LogOut, PhoneOff, RotateCcw, SearchX, Square } from 'lucide-react';
 import { api } from '../../services/api';
-import { CandidatePortal } from '../../types';
+import { CandidatePortal, Screening } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { StatusBadge } from '../../components/hr/StatusBadge';
 import { ResumeUpload } from '../../components/candidate/ResumeUpload';
 import { MicCheck } from '../../components/candidate/MicCheck';
 import { CallPanel, CallOutcome } from '../../components/candidate/CallPanel';
@@ -41,9 +43,19 @@ export const CandidateHomePage: React.FC = () => {
   const [inCall, setInCall] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [missing, setMissing] = useState<string | null>(null);
+  const [screenings, setScreenings] = useState<Screening[]>([]);
+  const { currentUser, logout } = useAppStore();
 
   const load = useCallback(async () => {
-    try { setMe(await api.candidateMe()); } catch (err: any) { setError(err.message); }
+    try {
+      setMe(await api.candidateMe());
+      setMissing(null);
+    } catch (err: any) {
+      // Signed in, but HR has not added this email to a running campaign.
+      if (/No screening found/i.test(err.message)) setMissing(err.message); else setError(err.message);
+    }
+    api.screenings().then(setScreenings).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -82,12 +94,35 @@ export const CandidateHomePage: React.FC = () => {
     await load();
   };
 
+  if (missing) {
+    return (
+      <div className="container-narrow" style={{ margin: '0 auto' }}>
+        <div className="card card-pad" style={{ textAlign: 'center', padding: 36 }}>
+          <div className="empty-icon"><SearchX size={22} /></div>
+          <h2>No screening found</h2>
+          <p className="muted mt-sm" style={{ maxWidth: 460, margin: '8px auto 0', lineHeight: 1.6 }}>
+            You are signed in as <strong style={{ color: 'var(--text)' }}>{currentUser?.email}</strong>, but there is no running screening for this address.
+            Check with HR that they added this exact email and ran the campaign, or sign in with another email.
+          </p>
+          <div className="row-wrap mt-lg" style={{ justifyContent: 'center' }}>
+            <button className="btn" onClick={load}><RotateCcw size={15} /> Check again</button>
+            <button className="btn btn-primary" onClick={() => { logout(); window.location.assign('/login?as=candidate'); }}><LogOut size={15} /> Use another email</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!me) {
     return <div className="container-narrow" style={{ margin: '0 auto' }}>{error ? <ErrorNote message={error} /> : <p className="muted">Loading…</p>}</div>;
   }
 
   const batch = me.batch;
-  const finished = FINISHED[me.status];
+  const closed = batch?.status === 'closed' && !['completed', 'failed'].includes(me.status);
+  const finished = closed
+    ? { icon: <Square size={20} />, title: 'This screening is closed', text: 'HR has closed this campaign, so new calls cannot start. Please contact the HR team if you still want to take it.' }
+    : FINISHED[me.status];
+  const others = screenings.filter(s => s.id !== me.id);
   const step2Done = micOk && me.consent_given;
   const ready = me.has_resume && step2Done;
   const firstName = me.name.split(' ')[0];
@@ -112,9 +147,9 @@ export const CandidateHomePage: React.FC = () => {
 
       {finished && !inCall ? (
         <div className="card card-pad" style={{ textAlign: 'center', padding: 32 }}>
-          <div className="empty-icon" style={me.status === 'completed' ? { background: 'var(--green-soft)', color: 'var(--green)' } : undefined}>{finished.icon}</div>
+          <div className="empty-icon" style={me.status === 'completed' ? { background: 'var(--ink)', color: 'var(--ink-text)', borderColor: 'var(--ink)' } : undefined}>{finished.icon}</div>
           <h2>{finished.title}</h2>
-          {me.status === 'failed' && me.retries_left > 0 ? (
+          {me.status === 'failed' && me.retries_left > 0 && batch?.status !== 'closed' ? (
             <>
               <p className="muted" style={{ maxWidth: 460, margin: '8px auto 0' }}>
                 {me.failure_reason ? `${me.failure_reason} ` : ''}The answers you gave are saved. You can take the call again from the start.
@@ -150,6 +185,19 @@ export const CandidateHomePage: React.FC = () => {
           <Step n={3} title={inCall ? 'Screening call' : 'Take the call'} done={false} current={ready || inCall}>
             <CallPanel ready={ready} onStart={() => { setNotice(null); setInCall(true); }} onFinished={callFinished} />
           </Step>
+        </div>
+      )}
+      {others.length > 0 && !inCall && (
+        <div className="card mt">
+          <div className="card-head"><h4>Your other screenings</h4></div>
+          <ul className="list">
+            {others.map(s => (
+              <li key={s.id} className="list-item" style={{ alignItems: 'center' }}>
+                <div className="grow"><div className="strong">{s.batch.job_role}</div><div className="tiny muted">{s.batch.company_name || s.batch.name}</div></div>
+                <StatusBadge status={s.status} />
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       <p className="tiny muted mt" style={{ textAlign: 'center' }}>{batch?.name}</p>

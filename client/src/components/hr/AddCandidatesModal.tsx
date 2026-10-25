@@ -48,7 +48,14 @@ export const AddCandidatesModal: React.FC<Props> = ({ batchId, existingCount, ex
 
   const loadFile = (file: File | undefined) => {
     if (!file) return;
-    if (file.size > 1024 * 1024) { setError('That file is larger than 1 MB. Export only the name and email columns.'); return; }
+    if (file.size > 2 * 1024 * 1024) { setError('That file is larger than 2 MB. Export only the name and email columns.'); return; }
+    if (file.name.toLowerCase().endsWith('.xlsx')) {
+      // Excel is read on the server; the rows come back and are shown here as CSV text.
+      api.parseCandidatesFile(file)
+        .then(({ rows }) => setText(['Name,Email', ...rows.map(r => `${r.name.replace(/,/g, ' ')},${r.email}`)].join('\n')))
+        .catch(err => setError(err.message));
+      return;
+    }
     file.text().then(setText).catch(() => setError('Could not read that file.'));
   };
 
@@ -66,15 +73,15 @@ export const AddCandidatesModal: React.FC<Props> = ({ batchId, existingCount, ex
   return (
     <Modal title="Add candidates" onClose={onClose} maxWidth={680}>
       <p className="small muted mb">
-        Use a CSV with <strong>Name</strong> and <strong>Email</strong> columns (other columns are ignored). Up to {MAX_PER_BATCH} candidates per batch; this batch has {existingCount}.
+        Upload an Excel (.xlsx) or CSV file with <strong>Name</strong> and <strong>Email</strong> columns (other columns are ignored), or paste rows. Up to {MAX_PER_BATCH} candidates per campaign; this one has {existingCount}.
         For the contest, use made-up candidates only.
       </p>
       <ErrorNote message={error} />
 
-      <Field label="CSV file">
+      <Field label="Excel or CSV file">
         <label className="btn" style={{ cursor: 'pointer' }}>
           <Upload size={14} /> Choose file
-          <input type="file" accept=".csv,text/csv,text/plain" onChange={e => loadFile(e.target.files?.[0])} style={{ display: 'none' }} />
+          <input type="file" accept=".xlsx,.csv,text/csv,text/plain" onChange={e => loadFile(e.target.files?.[0])} style={{ display: 'none' }} />
         </label>
       </Field>
       <Field label="…or paste rows">
@@ -98,7 +105,7 @@ export const AddCandidatesModal: React.FC<Props> = ({ batchId, existingCount, ex
                   <td className="muted">{p.row}</td>
                   <td>{p.name || '—'}</td>
                   <td>{p.email || '—'}</td>
-                  <td style={{ color: p.issue ? (p.issue.startsWith('Already') ? 'var(--muted)' : 'var(--red)') : 'var(--green)', fontWeight: 500 }}>
+                  <td className={p.issue && !p.issue.startsWith('Already') ? 'strong' : 'muted'}>
                     {p.issue || 'OK'}
                   </td>
                 </tr>

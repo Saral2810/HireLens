@@ -36,11 +36,11 @@ export const BatchFormModal: React.FC<Props> = ({ batch, onClose, onSaved }) => 
   };
 
   return (
-    <Modal title={batch ? 'Edit batch' : 'New batch'} onClose={onClose}>
+    <Modal title={batch ? 'Edit campaign' : 'New campaign'} onClose={onClose}>
       <form onSubmit={submit}>
         <ErrorNote message={error} />
-        <Field label="Batch name">
-          <input className="input" required maxLength={120} value={name} onChange={e => setName(e.target.value)} placeholder="Batch 1 – 24 Oct" />
+        <Field label="Campaign name">
+          <input className="input" required maxLength={120} value={name} onChange={e => setName(e.target.value)} placeholder="Backend Engineers – November" />
         </Field>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0 14px' }}>
           <Field label="Job role" hint="The agent mentions this, and resume questions are written for it.">
@@ -58,7 +58,7 @@ export const BatchFormModal: React.FC<Props> = ({ batch, onClose, onSaved }) => 
         </Field>
         <div className="modal-foot">
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : batch ? 'Save' : 'Create batch'}</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : batch ? 'Save' : 'Create campaign'}</button>
         </div>
       </form>
     </Modal>
