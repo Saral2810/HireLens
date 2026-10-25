@@ -2,13 +2,12 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import app from '../../backend/src/app.js';
-import { requireAuth, requireRole, resolveRole } from '../../backend/src/middleware/auth.js';
+import { requireAuth, requireRole } from '../../backend/src/middleware/auth.js';
 
 let server;
 let base;
 
 before(async () => {
-  process.env.SUPER_ADMIN_EMAILS = 'hr@test.local';
   // Mount throwaway protected routes next to the real app to exercise the middleware.
   const probe = express();
   probe.get('/probe/any', requireAuth, (req, res) => res.json(req.user));
@@ -23,12 +22,6 @@ before(async () => {
 after(() => server.close());
 
 const get = (path, token) => fetch(base + path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-
-test('resolveRole uses SUPER_ADMIN_EMAILS', () => {
-  assert.equal(resolveRole({ email: 'HR@test.local' }), 'superadmin');
-  assert.equal(resolveRole({ email: 'someone@test.local' }), 'candidate');
-  assert.equal(resolveRole({}), 'candidate');
-});
 
 test('requests without a token are rejected', async () => {
   assert.equal((await get('/probe/any')).status, 401);
@@ -50,7 +43,29 @@ test('requireRole separates HR and candidates', async () => {
 test('/api/auth/me returns the signed-in user', async () => {
   const res = await get('/api/auth/me', 'test:candidate:c1:cand@test.local');
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { id: 'c1', email: 'cand@test.local', role: 'candidate' });
+  assert.deepEqual(await res.json(), { id: 'c1', email: 'cand@test.local', role: 'candidate', name: null });
+});
+
+test('HR endpoints refuse candidates and signed-out users', async () => {
+  const id = '00000000-0000-4000-8000-000000000001';
+  const post = (token, path = `/api/hr/candidates/${id}/invite-link`) => fetch(base + path, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  assert.equal((await post()).status, 401);
+  assert.equal((await post('test:candidate:c1')).status, 403);
+  // HR passes the role check and reaches the route, which needs the database (not available in tests).
+  assert.equal((await post('test:superadmin:hr1')).status, 503);
+  // Malformed IDs never reach the database.
+  assert.equal((await post('test:superadmin:hr1', '/api/hr/candidates/not-a-uuid/invite-link')).status, 404);
+});
+
+test('HR batch endpoints validate input before touching the database', async () => {
+  const send = (method, path, body) => fetch(base + path, {
+    method, headers: { Authorization: 'Bearer test:superadmin:hr1', 'Content-Type': 'application/json' }, body: body && JSON.stringify(body)
+  });
+  const bad = await send('POST', '/api/hr/batches', { name: '', job_role: 'Engineer' });
+  assert.equal(bad.status, 400);
+  assert.match((await bad.json()).message, /Batch name is required/);
+  assert.equal((await send('GET', '/api/hr/batches', null)).status, 503);
+  assert.equal((await fetch(base + '/api/hr/batches', { headers: { Authorization: 'Bearer test:candidate:c1' } })).status, 403);
 });
 
 test('login requires email and password', async () => {

@@ -1,4 +1,4 @@
-import { User } from '../types';
+import { AnswerType, Batch, BatchDetail, HrQuestion, InviteLinkResult, User } from '../types';
 
 const TOKEN_KEY = 'hr_auth_token';
 
@@ -49,6 +49,65 @@ class ApiService {
 
   async getMe(): Promise<User> {
     return this.request<User>('/api/auth/me');
+  }
+
+  // ── HR ──
+  async createInviteLink(candidateId: string): Promise<{ candidate_id: string; email: string; invite_link: string; note: string }> {
+    return this.request(`/api/hr/candidates/${encodeURIComponent(candidateId)}/invite-link`, { method: 'POST' });
+  }
+
+  async createInviteLinks(batchId: string, candidateIds?: string[]): Promise<{ links: InviteLinkResult[]; note: string }> {
+    return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/invite-links`, {
+      method: 'POST', body: JSON.stringify(candidateIds ? { candidate_ids: candidateIds } : {})
+    });
+  }
+
+  async listBatches(): Promise<Batch[]> {
+    return this.request('/api/hr/batches');
+  }
+
+  async getBatch(batchId: string): Promise<BatchDetail> {
+    return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}`);
+  }
+
+  async createBatch(fields: { name: string; job_role: string; batch_date?: string; company_name?: string; job_description?: string }): Promise<Batch> {
+    return this.request('/api/hr/batches', { method: 'POST', body: JSON.stringify(fields) });
+  }
+
+  async updateBatch(batchId: string, fields: Partial<Pick<Batch, 'name' | 'job_role' | 'batch_date' | 'company_name' | 'job_description'>>): Promise<Batch> {
+    return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}`, { method: 'PATCH', body: JSON.stringify(fields) });
+  }
+
+  async deleteBatch(batchId: string): Promise<void> {
+    await this.request(`/api/hr/batches/${encodeURIComponent(batchId)}`, { method: 'DELETE' });
+  }
+
+  async addQuestion(batchId: string, fields: { question_text: string; answer_type: AnswerType }): Promise<HrQuestion> {
+    return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/questions`, { method: 'POST', body: JSON.stringify(fields) });
+  }
+
+  async addDefaultQuestions(batchId: string): Promise<{ added: number; questions: HrQuestion[] }> {
+    return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/questions/defaults`, { method: 'POST' });
+  }
+
+  async updateQuestion(questionId: string, fields: Partial<Pick<HrQuestion, 'question_text' | 'answer_type'>>): Promise<HrQuestion> {
+    return this.request(`/api/hr/questions/${encodeURIComponent(questionId)}`, { method: 'PATCH', body: JSON.stringify(fields) });
+  }
+
+  async deleteQuestion(questionId: string): Promise<void> {
+    await this.request(`/api/hr/questions/${encodeURIComponent(questionId)}`, { method: 'DELETE' });
+  }
+
+  async reorderQuestions(batchId: string, ids: string[]): Promise<HrQuestion[]> {
+    return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/questions/order`, { method: 'PUT', body: JSON.stringify({ ids }) });
+  }
+
+  async addCandidates(batchId: string, candidates: { name: string; email: string }[]): Promise<{ added: number; skipped_existing: number }> {
+    return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/candidates`, { method: 'POST', body: JSON.stringify({ candidates }) });
+  }
+
+  async deleteCandidate(candidateId: string): Promise<void> {
+    await this.request(`/api/hr/candidates/${encodeURIComponent(candidateId)}`, { method: 'DELETE' });
   }
 
   // ── Temporary call-loop spike (roadmap Phase B) ──

@@ -2,22 +2,23 @@ import db from '../config/db.js';
 
 export const ROLES = Object.freeze({ SUPERADMIN: 'superadmin', CANDIDATE: 'candidate' });
 
-/** Emails in SUPER_ADMIN_EMAILS (comma-separated) get the superadmin role. */
-export function getSuperAdminEmails() {
-  return (process.env.SUPER_ADMIN_EMAILS || '')
-    .split(',')
-    .map(e => e.replace(/^["' ]+|["' ]+$/g, '').trim().toLowerCase())
-    .filter(Boolean);
-}
+// Roles come from the profiles table (one row per auth user, see database/README.md).
+// Cached briefly so every request does not hit the database.
+const ROLE_CACHE_MS = 30 * 1000;
+const roleCache = new Map();
 
 /**
- * Role for a signed-in user. Until the profiles table exists (roadmap Phase C) the role comes
- * from SUPER_ADMIN_EMAILS; everyone else is a candidate.
- * @param {{ email?: string }} user
- * @returns {'superadmin'|'candidate'}
+ * Role of a signed-in user. Users without a profile row are treated as candidates.
+ * @param {string} userId
+ * @returns {Promise<'superadmin'|'candidate'>}
  */
-export function resolveRole(user) {
-  return getSuperAdminEmails().includes((user?.email || '').toLowerCase()) ? ROLES.SUPERADMIN : ROLES.CANDIDATE;
+export async function getRole(userId) {
+  const cached = roleCache.get(userId);
+  if (cached && cached.expires > Date.now()) return cached.role;
+  const profile = await db.getProfile(userId);
+  const role = profile?.role === ROLES.SUPERADMIN ? ROLES.SUPERADMIN : ROLES.CANDIDATE;
+  roleCache.set(userId, { role, expires: Date.now() + ROLE_CACHE_MS });
+  return role;
 }
 
 // Tests run without Supabase. They authenticate with "Bearer test:<role>:<userId>[:<email>]".
@@ -54,7 +55,7 @@ export async function requireAuth(req, res, next) {
       return res.status(401).json({ error: 'Unauthorized', message: 'Invalid or expired token.' });
     }
 
-    req.user = { id: data.user.id, email: data.user.email, role: resolveRole(data.user) };
+    req.user = { id: data.user.id, email: data.user.email, role: await getRole(data.user.id) };
     next();
   } catch (err) {
     console.error('[Auth Middleware] Error in requireAuth:', err);
