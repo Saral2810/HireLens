@@ -4,8 +4,10 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { requireAuth, requireRole, resolveRole } from './middleware/auth.js';
-import db, { createAuthClient } from './config/db.js';
+import { requireAuth, requireRole } from './middleware/auth.js';
+import db from './config/db.js';
+import authRouter from './routes/auth.js';
+import hrRouter from './routes/hr.js';
 import spikeRouter from './routes/spike.js';
 
 dotenv.config();
@@ -34,44 +36,8 @@ if (fs.existsSync(frontendPath)) {
   console.log('[App] client/dist not found — run `npm run build` to serve the UI from this server.');
 }
 
-/**
- * POST /api/auth/login
- * Checks the email/password with Supabase Auth and returns the session token and role.
- */
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const { email, password } = req.body || {};
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required.' });
-    }
-
-    const authClient = createAuthClient();
-    if (!authClient) {
-      return res.status(503).json({ error: 'Auth not configured', message: 'Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.' });
-    }
-
-    // Separate client: signing in on db.supabase would make all later queries run as this user.
-    const lowerEmail = email.trim().toLowerCase();
-    const authAttempt = await authClient.auth.signInWithPassword({ email: lowerEmail, password });
-    if (authAttempt.error || !authAttempt.data?.session) {
-      return res.status(401).json({ error: 'Invalid credentials. No account matches this email and password.' });
-    }
-
-    const { user, session } = authAttempt.data;
-    res.json({
-      success: true,
-      token: session.access_token,
-      user: { id: user.id, email: user.email, role: resolveRole(user) }
-    });
-  } catch (err) {
-    console.error('[POST /api/auth/login] Error:', err);
-    res.status(500).json({ error: 'Authentication service error.' });
-  }
-});
-
-app.get('/api/auth/me', requireAuth, (req, res) => {
-  res.json({ id: req.user.id, email: req.user.email, role: req.user.role });
-});
+app.use('/api/auth', authRouter);
+app.use('/api/hr', requireAuth, requireRole('superadmin'), hrRouter);
 
 // Temporary call-loop test endpoints (roadmap Phase B), HR only.
 app.use('/api/spike', requireAuth, requireRole('superadmin'), spikeRouter);

@@ -11,7 +11,8 @@ UPDATE auth.users SET raw_app_meta_data = raw_app_meta_data || '{"is_super_admin
 UPDATE public.profiles SET role = 'superadmin' WHERE email = 'you@example.com';
 ```
 
-4. Put the project URL and service-role key in `.env`, and the same email in `SUPER_ADMIN_EMAILS`.
+4. Put the project URL and service-role key in `.env`. (HR vs candidate comes from `profiles.role`.)
+5. **Authentication → URL Configuration**: set **Site URL** to the app address (e.g. `http://localhost:3000`) and add `http://localhost:3000/**` to **Redirect URLs**, so candidate invite links land back in the app.
 
 ## What is inside
 

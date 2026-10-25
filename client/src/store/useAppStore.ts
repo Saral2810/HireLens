@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { User } from '../types';
 import { api } from '../services/api';
+import { consumeInviteFragment } from '../lib/inviteSession';
 
 interface AppState {
   theme: 'dark' | 'light';
@@ -8,8 +9,11 @@ interface AppState {
 
   currentUser: User | null;
   sessionChecked: boolean;
+  /** Message when a candidate opened an invite link that no longer works. */
+  inviteError: string | null;
   setCurrentUser: (user: User | null) => void;
   initSession: () => Promise<void>;
+  refreshUser: () => Promise<void>;
   logout: () => void;
 }
 
@@ -23,9 +27,19 @@ export const useAppStore = create<AppState>((set) => ({
 
   currentUser: null,
   sessionChecked: false,
+  inviteError: null,
   setCurrentUser: (user) => set({ currentUser: user }),
 
   initSession: async () => {
+    // A candidate arriving from an invite link: the link's session replaces any old one.
+    const invite = consumeInviteFragment();
+    if (invite.kind === 'session') api.setAuthToken(invite.accessToken);
+    if (invite.kind === 'error') {
+      api.setAuthToken(null);
+      set({ currentUser: null, sessionChecked: true, inviteError: invite.message });
+      return;
+    }
+
     if (!api.hasToken()) {
       set({ currentUser: null, sessionChecked: true });
       return;
@@ -39,9 +53,14 @@ export const useAppStore = create<AppState>((set) => ({
     }
   },
 
+  refreshUser: async () => {
+    const user = await api.getMe();
+    set({ currentUser: user });
+  },
+
   logout: () => {
     api.setAuthToken(null);
-    set({ currentUser: null });
+    set({ currentUser: null, inviteError: null });
   }
 }));
 

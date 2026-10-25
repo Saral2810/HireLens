@@ -1,13 +1,19 @@
 import React, { useEffect } from 'react';
-import { LogOut } from 'lucide-react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
 import { LoginModal } from './components/auth/LoginModal';
+import { AppHeader } from './components/layout/AppHeader';
+import { InviteRequiredPage } from './pages/InviteRequiredPage';
+import { BatchesPage } from './pages/hr/BatchesPage';
+import { BatchDetailPage } from './pages/hr/BatchDetailPage';
 import { CallSpikePage } from './pages/CallSpikePage';
+import { CandidateHomePage } from './pages/candidate/CandidateHomePage';
 
-// Phase A shell. The HR portal (batches, questions, results) and the candidate portal
-// (resume upload, mic check, call) replace the placeholder in roadmap Phases D–H.
+// Two portals: HR (super-admin) under /hr, candidates under /candidate.
+// Each role is sent to its own area; the backend enforces the same split.
 export const App: React.FC = () => {
-  const { theme, currentUser, sessionChecked, initSession, logout } = useAppStore();
+  const { theme, currentUser, sessionChecked, inviteError, initSession } = useAppStore();
+  const location = useLocation();
 
   useEffect(() => {
     document.documentElement.setAttribute('data-pd-theme', theme);
@@ -15,31 +21,30 @@ export const App: React.FC = () => {
   }, []);
 
   if (!sessionChecked) return null;
-  if (!currentUser) return <LoginModal />;
 
-  const roleLabel = currentUser.role === 'superadmin' ? 'HR (super-admin)' : 'Candidate';
+  if (!currentUser) {
+    const candidateArea = ['/candidate', '/invite'].some(p => location.pathname.startsWith(p));
+    return candidateArea || inviteError ? <InviteRequiredPage /> : <LoginModal />;
+  }
+
+  const home = currentUser.role === 'superadmin' ? '/hr' : '/candidate';
 
   return (
     <div className="lx-wrap">
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 24px', borderBottom: '1px solid var(--lx-border)' }}>
-        <div style={{ fontWeight: 700, color: 'var(--lx-text)' }}>HR Screening Voice Agent</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, color: 'var(--lx-muted)' }}>
-          <span>{currentUser.email} · {roleLabel}</span>
-          <button className="lx-restored-btn" onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <LogOut size={14} /> Sign out
-          </button>
-        </div>
-      </header>
-
+      <AppHeader />
       <main className="lx-main" style={{ padding: 24, color: 'var(--lx-text)' }}>
-        {currentUser.role === 'superadmin' ? (
-          <CallSpikePage />
-        ) : (
-          <>
-            <h2 style={{ marginTop: 0 }}>Signed in as {roleLabel}</h2>
-            <p style={{ color: 'var(--lx-muted)' }}>The candidate portal (resume upload, mic check, screening call) is being built.</p>
-          </>
-        )}
+        <Routes>
+          {currentUser.role === 'superadmin' && (
+            <>
+              <Route path="/hr" element={<BatchesPage />} />
+              <Route path="/hr/batches/:batchId" element={<BatchDetailPage />} />
+              {/* Temporary call-loop test (Phase B), removed in Phase G. */}
+              <Route path="/hr/call-test" element={<CallSpikePage />} />
+            </>
+          )}
+          {currentUser.role === 'candidate' && <Route path="/candidate/*" element={<CandidateHomePage />} />}
+          <Route path="*" element={<Navigate to={home} replace />} />
+        </Routes>
       </main>
     </div>
   );
