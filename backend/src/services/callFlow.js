@@ -16,7 +16,7 @@ export const MOVE_ON_LINE = 'Koi baat nahi, aage badhte hain.';
 export const END_REASONS = {
   ended_by_candidate: 'The candidate ended the call.',
   left_page: 'The candidate left the call page.',
-  client_error: 'The call stopped because of an error in the browser.'
+  client_error: 'The call stopped because of a technical problem (connection or speech service).'
 };
 
 /**

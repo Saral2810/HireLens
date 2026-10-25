@@ -1,6 +1,6 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { transcribe, speak, STT_URL, TTS_URL } from '../../backend/src/services/gnaniSpeech.js';
+import { transcribe, speak, speechRetry, STT_URL, TTS_URL } from '../../backend/src/services/gnaniSpeech.js';
 
 const realFetch = globalThis.fetch;
 let requests;
@@ -19,6 +19,7 @@ beforeEach(() => {
   process.env.GNANI_TTS_MODEL = 'timbre-v2.5';
   process.env.GNANI_TTS_LANGUAGE = 'hi-en';
   process.env.GNANI_STT_LANGUAGE = 'en-IN';
+  speechRetry.delaysMs = [1, 1];
 });
 
 afterEach(() => {
@@ -42,9 +43,32 @@ test('transcribe refuses formats Prisma does not accept', async () => {
   await assert.rejects(transcribe(Buffer.from('x'), { format: 'webm' }), /does not accept "webm"/);
 });
 
-test('transcribe surfaces Prisma errors with a status', async () => {
+test('transcribe surfaces Prisma errors with a status and does not retry a bad request', async () => {
   mockFetch(() => new Response(JSON.stringify({ success: false, message: 'bad audio' }), { status: 400 }));
-  await assert.rejects(transcribe(Buffer.from('x')), (err) => err.status === 502 && /400: bad audio/.test(err.message));
+  await assert.rejects(transcribe(Buffer.from('x')), (err) => err.status === 502 && /400: bad audio/.test(err.message) && !err.retryable);
+  assert.equal(requests.length, 1);
+});
+
+test('a passing 403 from Prisma is retried and the answer still comes through', async () => {
+  let n = 0;
+  mockFetch(() => (++n === 1
+    ? new Response('Forbidden', { status: 403 })
+    : new Response(JSON.stringify({ success: true, transcript: 'teen mahine' }), { status: 200 })));
+  assert.equal((await transcribe(Buffer.from('RIFF'))).transcript, 'teen mahine');
+  assert.equal(requests.length, 2);
+});
+
+test('Prisma is tried 3 times, then the error says why', async () => {
+  mockFetch(() => new Response('Forbidden by gateway', { status: 403 }));
+  await assert.rejects(transcribe(Buffer.from('RIFF')), (err) => err.retryable && /403: Forbidden by gateway/.test(err.message));
+  assert.equal(requests.length, 3);
+});
+
+test('Timbre rate limits are retried too', async () => {
+  let n = 0;
+  mockFetch(() => (++n === 1 ? new Response('busy', { status: 429 }) : new Response(new Uint8Array([7]), { status: 200 })));
+  assert.deepEqual([...(await speak('Namaste')).audio], [7]);
+  assert.equal(requests.length, 2);
 });
 
 test('speak asks Timbre for MP3 with the configured voice and returns the bytes', async () => {
