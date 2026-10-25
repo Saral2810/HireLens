@@ -3,25 +3,27 @@ import { CandidateStatus } from '../../types';
 
 export const STATUS_LABELS: Record<CandidateStatus, string> = {
   invited: 'Invited',
-  resume_uploaded: 'Resume uploaded',
+  resume_uploaded: 'Ready for call',
   in_call: 'In call',
   completed: 'Completed',
-  failed: 'Failed'
+  failed: 'Did not finish'
 };
 
-const STATUS_COLORS: Record<CandidateStatus, string> = {
-  invited: '#94a3b8',
-  resume_uploaded: '#60a5fa',
-  in_call: '#f59e0b',
-  completed: '#22c55e',
-  failed: '#ef4444'
+const STATUS_TONES: Record<CandidateStatus, string> = {
+  invited: 'grey',
+  resume_uploaded: 'blue',
+  in_call: 'amber',
+  completed: 'green',
+  failed: 'red'
 };
 
 export const StatusBadge: React.FC<{ status: CandidateStatus }> = ({ status }) => (
-  <span style={{
-    display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 12, fontWeight: 600,
-    color: STATUS_COLORS[status], border: `1px solid ${STATUS_COLORS[status]}55`, background: `${STATUS_COLORS[status]}1a`
-  }}>
-    {STATUS_LABELS[status]}
-  </span>
+  <span className={`badge badge-${STATUS_TONES[status]}`}>{STATUS_LABELS[status]}</span>
 );
+
+/** Fit score as a coloured pill (green ≥ 70, amber ≥ 40, red below). */
+export const ScorePill: React.FC<{ score: number | null | undefined }> = ({ score }) => {
+  if (score === null || score === undefined) return <span className="score score-none">—</span>;
+  const tone = score >= 70 ? 'high' : score >= 40 ? 'mid' : 'low';
+  return <span className={`score score-${tone}`} title="Fit score (0–100)">{score}</span>;
+};

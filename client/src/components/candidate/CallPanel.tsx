@@ -183,51 +183,57 @@ export const CallPanel: React.FC<Props> = ({ ready, onStart, onFinished }) => {
 
   if (!inCall) {
     return (
-      <div>
+      <div className="stack">
         <ErrorNote message={error} />
-        <p style={{ color: 'var(--lx-muted)', fontSize: 14, marginTop: 0, lineHeight: 1.5 }}>
-          {ready
-            ? <><Headphones size={14} style={{ verticalAlign: -2 }} /> Wear headphones, sit somewhere quiet and keep this tab open. The assistant asks one question at a time. Answer, then pause for a moment, and it will continue.</>
-            : 'Complete steps 1 and 2 to start your call.'}
-        </p>
-        <button className="lx-restored-btn primary" disabled={!ready} onClick={run} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <PhoneCall size={14} /> Start call
+        {ready ? (
+          <div className="alert alert-info" style={{ marginBottom: 0 }}>
+            <Headphones size={15} />
+            <span>Wear headphones, sit somewhere quiet and keep this tab open. The assistant asks one question at a time: answer, pause for a moment, and it will continue. About 5 minutes.</span>
+          </div>
+        ) : (
+          <p className="muted">Complete steps 1 and 2 to start your call.</p>
+        )}
+        <button className="btn btn-primary btn-lg" disabled={!ready} onClick={run} style={{ alignSelf: 'flex-start' }}>
+          <PhoneCall size={17} /> Start call
         </button>
       </div>
     );
   }
 
+  const pct = progress ? Math.round((Math.min(progress.position, progress.total) / progress.total) * 100) : 0;
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--lx-muted)', fontSize: 13, minHeight: 20 }}>
-        {phase === 'speaking' && <Volume2 size={15} />}
-        {(phase === 'thinking' || phase === 'connecting' || phase === 'saving') && <Loader size={15} />}
-        {phase === 'listening' && <Mic size={15} color="#22c55e" />}
-        <span>{PHASE_LABEL[phase]}</span>
-        {progress && phase !== 'saving' && (
-          <span style={{ marginLeft: 'auto' }}>Question {Math.min(progress.position + 1, progress.total)} of {progress.total}</span>
-        )}
+    <div className="call" data-phase={phase}>
+      {progress && phase !== 'saving' && (
+        <div className="row tiny muted mb-sm" style={{ maxWidth: 420, margin: '0 auto 8px' }}>
+          <span>Question {Math.min(progress.position + 1, progress.total)} of {progress.total}</span>
+          <span className="spacer">{pct}%</span>
+        </div>
+      )}
+      {progress && phase !== 'saving' && <div className="progress" style={{ maxWidth: 420, margin: '0 auto' }}><div style={{ width: `${pct}%` }} /></div>}
+
+      <div className="orb-wrap mt">
+        <span className="orb-ring" /><span className="orb-ring" />
+        <div className="orb" style={phase === 'listening' ? { transform: `scale(${1 + Math.min(0.18, level * 2)})` } : undefined}>
+          {phase === 'listening' ? <Mic size={34} /> : phase === 'speaking' ? <Volume2 size={34} /> : <Loader size={30} />}
+        </div>
+      </div>
+      <div className="call-status" aria-live="polite">{PHASE_LABEL[phase]}</div>
+      <p className="caption" aria-live="polite">{caption ? `“${caption}”` : ''}</p>
+
+      <div className="meter" aria-label="Microphone level" style={{ opacity: phase === 'listening' ? 1 : 0.3 }}>
+        <div style={{ width: `${Math.min(100, level * 600)}%` }} />
       </div>
 
-      <p aria-live="polite" style={{ fontSize: 17, lineHeight: 1.55, margin: '14px 0', minHeight: 54 }}>
-        {caption ? `“${caption}”` : ''}
-      </p>
-
-      <div aria-label="Microphone level" style={{ height: 8, background: 'var(--lx-border)', borderRadius: 4, overflow: 'hidden', marginBottom: 14, opacity: phase === 'listening' ? 1 : 0.35 }}>
-        <div style={{ width: `${Math.min(100, level * 600)}%`, height: '100%', background: '#22c55e', transition: 'width 60ms linear' }} />
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <button className="lx-restored-btn" disabled={phase !== 'listening'} onClick={() => recorder.current?.stop()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Mic size={14} /> Done answering
+      <div className="row-wrap" style={{ justifyContent: 'center', gap: 10 }}>
+        <button className="btn btn-lg" disabled={phase !== 'listening'} onClick={() => recorder.current?.stop()}>
+          <Mic size={16} /> Done answering
         </button>
         <button
-          className="lx-restored-btn"
+          className="btn btn-lg btn-danger"
           disabled={phase === 'saving' || phase === 'connecting'}
           onClick={() => { if (window.confirm('End the call now? Your answers so far are kept, but you cannot restart the call yourself.')) stopEverything('ended_by_candidate'); }}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fca5a5' }}
         >
-          <PhoneOff size={14} /> End call
+          <PhoneOff size={16} /> End call
         </button>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Circle } from 'lucide-react';
+import { Check, CheckCircle2, Clock, Info, Languages, PhoneOff } from 'lucide-react';
 import { api } from '../../services/api';
 import { CandidatePortal } from '../../types';
 import { ResumeUpload } from '../../components/candidate/ResumeUpload';
@@ -7,19 +7,28 @@ import { MicCheck } from '../../components/candidate/MicCheck';
 import { CallPanel, CallOutcome } from '../../components/candidate/CallPanel';
 import { ErrorNote } from '../../components/ui/Modal';
 
-const DONE_TEXT: Partial<Record<CandidatePortal['status'], string>> = {
-  in_call: 'Your screening call is open in another tab or window. If you closed it, wait three minutes and reload this page.',
-  completed: 'Your screening call is complete. Thank you! The HR team will contact you.',
-  failed: 'Your screening call did not finish. The answers you gave are saved. Please contact the HR team if you would like another try.'
+const FINISHED: Partial<Record<CandidatePortal['status'], { icon: React.ReactNode; title: string; text: string }>> = {
+  in_call: {
+    icon: <Clock size={22} />, title: 'Your call is open elsewhere',
+    text: 'Your screening call is open in another tab or window. If you closed it, wait three minutes and reload this page.'
+  },
+  completed: {
+    icon: <CheckCircle2 size={22} />, title: 'Call completed. Thank you!',
+    text: 'Your answers have been shared with the hiring team. They will contact you about the next steps.'
+  },
+  failed: {
+    icon: <PhoneOff size={22} />, title: 'Your call did not finish',
+    text: 'The answers you gave are saved. Please contact the HR team if you would like another try.'
+  }
 };
 
-const Step: React.FC<{ n: number; title: string; done: boolean; children: React.ReactNode }> = ({ n, title, done, children }) => (
-  <section style={{ border: '1px solid var(--lx-border)', borderRadius: 10, padding: '16px 18px', marginBottom: 14 }}>
-    <h3 style={{ margin: '0 0 10px', fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-      {done ? <CheckCircle2 size={18} color="#22c55e" /> : <Circle size={18} color="var(--lx-muted)" />}
-      Step {n}: {title}
-    </h3>
-    {children}
+const Step: React.FC<{ n: number; title: string; done: boolean; current: boolean; children: React.ReactNode }> = ({ n, title, done, current, children }) => (
+  <section className={`step${done ? ' done' : ''}${current ? ' current' : ''}`}>
+    <div className="step-head">
+      <span className="step-num">{done ? <Check size={15} /> : n}</span>
+      <h3>{title}</h3>
+    </div>
+    <div className="step-body">{children}</div>
   </section>
 );
 
@@ -59,51 +68,64 @@ export const CandidateHomePage: React.FC = () => {
   };
 
   if (!me) {
-    return <div>{error ? <ErrorNote message={error} /> : <p style={{ color: 'var(--lx-muted)' }}>Loading…</p>}</div>;
+    return <div className="container-narrow" style={{ margin: '0 auto' }}>{error ? <ErrorNote message={error} /> : <p className="muted">Loading…</p>}</div>;
   }
 
   const batch = me.batch;
-  const finished = DONE_TEXT[me.status];
-  const ready = me.has_resume && me.consent_given && micOk;
+  const finished = FINISHED[me.status];
+  const step2Done = micOk && me.consent_given;
+  const ready = me.has_resume && step2Done;
+  const firstName = me.name.split(' ')[0];
 
   return (
-    <div style={{ maxWidth: 680 }}>
-      <h2 style={{ marginTop: 0 }}>Hi {me.name},</h2>
-      <p style={{ fontSize: 15, lineHeight: 1.6 }}>
-        You have been invited to a short voice screening (about 5 minutes) for the role of <strong>{batch?.job_role}</strong>
-        {batch?.company_name ? <> at <strong>{batch.company_name}</strong></> : null}. An AI assistant will ask the questions; you answer by speaking, in English, Hindi or Hinglish.
-      </p>
+    <div className="container-narrow" style={{ margin: '0 auto' }}>
+      {!inCall && (
+        <div className="hero">
+          <h1>Hi {firstName}, welcome!</h1>
+          <p>
+            You're invited to a short voice screening for <strong>{batch?.job_role}</strong>
+            {batch?.company_name ? <> at <strong>{batch.company_name}</strong></> : null}. An AI assistant asks the questions and you answer by speaking.
+          </p>
+          <div className="hero-meta">
+            <span><Clock size={12} style={{ verticalAlign: -1 }} /> About 5 minutes</span>
+            <span><Languages size={12} style={{ verticalAlign: -1 }} /> English, Hindi or Hinglish</span>
+          </div>
+        </div>
+      )}
       <ErrorNote message={error} />
-
-      {notice && <p style={{ fontSize: 14, color: 'var(--lx-muted)' }}>{notice}</p>}
+      {notice && <div className="alert alert-info"><Info size={15} /><span>{notice}</span></div>}
 
       {finished && !inCall ? (
-        <p style={{ fontSize: 15 }}>{finished}</p>
+        <div className="card card-pad" style={{ textAlign: 'center', padding: 32 }}>
+          <div className="empty-icon" style={me.status === 'completed' ? { background: 'var(--green-soft)', color: 'var(--green)' } : undefined}>{finished.icon}</div>
+          <h2>{finished.title}</h2>
+          <p className="muted mt-sm" style={{ maxWidth: 440, margin: '8px auto 0' }}>{finished.text}</p>
+        </div>
       ) : (
-        <>
+        <div className="steps">
           {/* Steps 1 and 2 are hidden during the call; step 3 stays in place so the call keeps running. */}
           {!inCall && (
             <>
-              <Step n={1} title="Upload your resume" done={me.has_resume}>
+              <Step n={1} title="Upload your resume" done={me.has_resume} current={!me.has_resume}>
                 <ResumeUpload hasResume={me.has_resume} onUploaded={load} />
               </Step>
 
-              <Step n={2} title="Check your microphone" done={micOk && me.consent_given}>
+              <Step n={2} title="Check your microphone" done={step2Done} current={me.has_resume && !step2Done}>
                 <MicCheck heard={micOk} onHeard={() => setMicOk(true)} />
-                <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 14, fontSize: 14, lineHeight: 1.5 }}>
-                  <input type="checkbox" checked={me.consent_given} disabled={me.consent_given || consentBusy} onChange={e => consent(e.target.checked)} style={{ marginTop: 4 }} />
+                <label className="check mt">
+                  <input type="checkbox" checked={me.consent_given} disabled={me.consent_given || consentBusy} onChange={e => consent(e.target.checked)} />
                   <span>I agree that this screening call is recorded and transcribed, and that my answers and recording are shared with the hiring team for this role.</span>
                 </label>
               </Step>
             </>
           )}
 
-          <Step n={3} title="Screening call" done={false}>
+          <Step n={3} title={inCall ? 'Screening call' : 'Take the call'} done={false} current={ready || inCall}>
             <CallPanel ready={ready} onStart={() => { setNotice(null); setInCall(true); }} onFinished={callFinished} />
           </Step>
-        </>
+        </div>
       )}
-      <p style={{ color: 'var(--lx-muted)', fontSize: 12 }}>Batch: {batch?.name}</p>
+      <p className="tiny muted mt" style={{ textAlign: 'center' }}>{batch?.name}</p>
     </div>
   );
 };

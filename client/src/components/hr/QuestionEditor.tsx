@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { ArrowDown, ArrowUp, Check, Pencil, Plus, Sparkles, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, ListChecks, Pencil, Plus, Sparkles, Trash2, X } from 'lucide-react';
 import { api } from '../../services/api';
 import { AnswerType, HrQuestion } from '../../types';
-import { ErrorNote } from '../ui/Modal';
+import { EmptyState, ErrorNote } from '../ui/Modal';
 
 export const ANSWER_TYPE_LABELS: Record<AnswerType, string> = {
   duration: 'Notice period / duration (→ days)',
@@ -12,11 +12,21 @@ export const ANSWER_TYPE_LABELS: Record<AnswerType, string> = {
   text: 'Free answer'
 };
 
+const SHORT_TYPE: Record<AnswerType, string> = {
+  duration: 'Saved as days', ctc: 'Saved as LPA', yes_no: 'Yes / No', number: 'Number', text: 'Free answer'
+};
+
 interface Props {
   batchId: string;
   questions: HrQuestion[];
   onChange: (questions: HrQuestion[]) => void;
 }
+
+const TypeSelect: React.FC<{ value: AnswerType; onChange: (v: AnswerType) => void; style?: React.CSSProperties }> = ({ value, onChange, style }) => (
+  <select className="select" value={value} onChange={e => onChange(e.target.value as AnswerType)} aria-label="Answer type" style={style}>
+    {Object.entries(ANSWER_TYPE_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+  </select>
+);
 
 /**
  * HR's fixed questions for a batch, asked after the resume questions in this order.
@@ -79,70 +89,67 @@ export const QuestionEditor: React.FC<Props> = ({ batchId, questions, onChange }
   };
 
   return (
-    <div>
-      <p style={{ color: 'var(--lx-muted)', fontSize: 13, marginTop: 0 }}>
-        Every candidate in this batch is asked these after 3–5 questions about their own resume. The agent speaks them exactly as written.
-      </p>
+    <div className="stack">
+      <div className="alert alert-info" style={{ marginBottom: 0 }}>
+        <ListChecks size={15} />
+        <span>The call opens with 3–5 questions about each candidate's own resume, then asks these in order. The assistant speaks them exactly as written, so Hinglish works well.</span>
+      </div>
       <ErrorNote message={error} />
 
-      {questions.length === 0 ? (
-        <div style={{ padding: 16, border: '1px dashed var(--lx-border)', borderRadius: 8, marginBottom: 14, color: 'var(--lx-muted)', fontSize: 14 }}>
-          No HR questions yet.{' '}
-          <button className="lx-restored-btn primary" onClick={addDefaults} disabled={busy} style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Sparkles size={14} /> Add default questions
-          </button>
-          <div style={{ fontSize: 12, marginTop: 8 }}>Notice period, current CTC, expected CTC, location and joining date.</div>
-        </div>
-      ) : (
-        <ol style={{ listStyle: 'none', padding: 0, margin: '0 0 14px' }}>
-          {questions.map((q, i) => (
-            <li key={q.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', border: '1px solid var(--lx-border)', borderRadius: 8, marginBottom: 8 }}>
-              <span style={{ color: 'var(--lx-muted)', fontWeight: 600, minWidth: 18 }}>{i + 1}.</span>
-              {editingId === q.id ? (
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <input className="lx-input" value={editText} maxLength={300} onChange={e => setEditText(e.target.value)} aria-label="Question text" />
-                  <select className="lx-input" value={editType} onChange={e => setEditType(e.target.value as AnswerType)} aria-label="Answer type">
-                    {Object.entries(ANSWER_TYPE_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-                  </select>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="lx-restored-btn primary" onClick={() => saveEdit(q.id)} disabled={busy} style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Check size={13} /> Save</button>
-                    <button className="lx-restored-btn" onClick={() => setEditingId(null)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}><X size={13} /> Cancel</button>
+      <div className="card">
+        {questions.length === 0 ? (
+          <EmptyState icon={<Sparkles size={20} />} title="No HR questions yet">
+            Start with the defaults: notice period, current CTC, expected CTC, location and joining date.
+            <div className="mt"><button className="btn btn-primary" onClick={addDefaults} disabled={busy}><Sparkles size={15} /> Add default questions</button></div>
+          </EmptyState>
+        ) : (
+          <ol className="list">
+            {questions.map((q, i) => (
+              <li key={q.id} className="list-item">
+                <span className="list-num">{i + 1}</span>
+                {editingId === q.id ? (
+                  <div className="grow stack-sm">
+                    <input className="input" value={editText} maxLength={300} onChange={e => setEditText(e.target.value)} aria-label="Question text" autoFocus />
+                    <TypeSelect value={editType} onChange={setEditType} />
+                    <div className="row">
+                      <button className="btn btn-primary btn-sm" onClick={() => saveEdit(q.id)} disabled={busy}><Check size={14} /> Save</button>
+                      <button className="btn btn-sm" onClick={() => setEditingId(null)}><X size={14} /> Cancel</button>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14 }}>{q.question_text}</div>
-                  <div style={{ fontSize: 12, color: 'var(--lx-muted)', marginTop: 3 }}>{ANSWER_TYPE_LABELS[q.answer_type]}</div>
-                </div>
-              )}
-              {editingId !== q.id && (
-                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                  <button className="lx-restored-btn" onClick={() => move(i, -1)} disabled={busy || i === 0} aria-label="Move up" title="Move up"><ArrowUp size={13} /></button>
-                  <button className="lx-restored-btn" onClick={() => move(i, 1)} disabled={busy || i === questions.length - 1} aria-label="Move down" title="Move down"><ArrowDown size={13} /></button>
-                  <button className="lx-restored-btn" onClick={() => startEdit(q)} disabled={busy} aria-label="Edit" title="Edit"><Pencil size={13} /></button>
-                  <button className="lx-restored-btn" onClick={() => remove(q)} disabled={busy} aria-label="Delete" title="Delete"><Trash2 size={13} /></button>
-                </div>
-              )}
-            </li>
-          ))}
-        </ol>
-      )}
+                ) : (
+                  <>
+                    <div className="grow">
+                      <div style={{ fontSize: 14.5 }}>{q.question_text}</div>
+                      <span className="tag mt-sm" style={{ marginTop: 6 }}>{SHORT_TYPE[q.answer_type]}</span>
+                    </div>
+                    <div className="btn-group">
+                      <button className="btn btn-ghost btn-icon" onClick={() => move(i, -1)} disabled={busy || i === 0} aria-label="Move up" title="Move up"><ArrowUp size={15} /></button>
+                      <button className="btn btn-ghost btn-icon" onClick={() => move(i, 1)} disabled={busy || i === questions.length - 1} aria-label="Move down" title="Move down"><ArrowDown size={15} /></button>
+                      <button className="btn btn-ghost btn-icon" onClick={() => startEdit(q)} disabled={busy} aria-label="Edit" title="Edit"><Pencil size={15} /></button>
+                      <button className="btn btn-ghost btn-icon btn-danger" onClick={() => remove(q)} disabled={busy} aria-label="Delete" title="Delete"><Trash2 size={15} /></button>
+                    </div>
+                  </>
+                )}
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
 
-      <form onSubmit={add} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input className="lx-input" required minLength={3} maxLength={300} value={newText} onChange={e => setNewText(e.target.value)}
-          placeholder="e.g. Kya aap hybrid model mein kaam kar sakte hain?" style={{ flex: '2 1 260px' }} aria-label="New question" />
-        <select className="lx-input" value={newType} onChange={e => setNewType(e.target.value as AnswerType)} style={{ flex: '1 1 180px' }} aria-label="Answer type">
-          {Object.entries(ANSWER_TYPE_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-        </select>
-        <button type="submit" className="lx-restored-btn primary" disabled={busy} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Plus size={14} /> Add question
-        </button>
+      <form onSubmit={add} className="card card-pad">
+        <h4 className="mb-sm">Add a question</h4>
+        <div className="row-wrap" style={{ alignItems: 'stretch' }}>
+          <input className="input" required minLength={3} maxLength={300} value={newText} onChange={e => setNewText(e.target.value)}
+            placeholder="e.g. Kya aap hybrid model mein kaam kar sakte hain?" style={{ flex: '3 1 280px', width: 'auto' }} aria-label="New question" />
+          <TypeSelect value={newType} onChange={setNewType} style={{ flex: '1 1 200px', width: 'auto' }} />
+          <button type="submit" className="btn btn-primary" disabled={busy} style={{ height: 38 }}><Plus size={15} /> Add</button>
+        </div>
+        {questions.length > 0 && (
+          <button type="button" className="btn btn-ghost btn-sm mt-sm" onClick={addDefaults} disabled={busy} style={{ marginLeft: -10 }}>
+            <Sparkles size={14} /> Add any missing default questions
+          </button>
+        )}
       </form>
-      {questions.length > 0 && (
-        <button className="lx-restored-btn" onClick={addDefaults} disabled={busy} style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-          <Sparkles size={13} /> Add any missing default questions
-        </button>
-      )}
     </div>
   );
 };

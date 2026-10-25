@@ -65,40 +65,40 @@ export const AddCandidatesModal: React.FC<Props> = ({ batchId, existingCount, ex
 
   return (
     <Modal title="Add candidates" onClose={onClose} maxWidth={680}>
-      <p style={{ fontSize: 13, color: 'var(--lx-muted)', marginTop: 0 }}>
+      <p className="small muted mb">
         Use a CSV with <strong>Name</strong> and <strong>Email</strong> columns (other columns are ignored). Up to {MAX_PER_BATCH} candidates per batch; this batch has {existingCount}.
         For the contest, use made-up candidates only.
       </p>
       <ErrorNote message={error} />
 
       <Field label="CSV file">
-        <label className="lx-restored-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+        <label className="btn" style={{ cursor: 'pointer' }}>
           <Upload size={14} /> Choose file
           <input type="file" accept=".csv,text/csv,text/plain" onChange={e => loadFile(e.target.files?.[0])} style={{ display: 'none' }} />
         </label>
       </Field>
       <Field label="…or paste rows">
-        <textarea className="lx-input" rows={5} value={text} onChange={e => setText(e.target.value)}
-          placeholder={'Name,Email\nAsha Rao,asha.rao@example.com\nVikram Shah,vikram@example.com'} style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }} />
+        <textarea className="textarea" rows={5} value={text} onChange={e => setText(e.target.value)}
+          placeholder={'Name,Email\nAsha Rao,asha.rao@example.com\nVikram Shah,vikram@example.com'} style={{ fontFamily: 'var(--mono)', fontSize: 12.5 }} />
       </Field>
 
       {parsed?.problem && <ErrorNote message={parsed.problem} />}
 
       {preview.length > 0 && (
-        <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid var(--lx-border)', borderRadius: 8, marginBottom: 12 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <div className="card mb" style={{ maxHeight: 260, overflowY: 'auto' }}>
+          <table className="table">
             <thead>
-              <tr style={{ textAlign: 'left', color: 'var(--lx-muted)' }}>
-                {['Row', 'Name', 'Email', 'Check'].map(h => <th key={h} style={{ padding: '6px 8px', borderBottom: '1px solid var(--lx-border)' }}>{h}</th>)}
+              <tr>
+                {['Row', 'Name', 'Email', 'Check'].map(h => <th key={h}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {preview.map(p => (
                 <tr key={p.row}>
-                  <td style={{ padding: '5px 8px', color: 'var(--lx-muted)' }}>{p.row}</td>
-                  <td style={{ padding: '5px 8px' }}>{p.name || '—'}</td>
-                  <td style={{ padding: '5px 8px' }}>{p.email || '—'}</td>
-                  <td style={{ padding: '5px 8px', color: p.issue ? (p.issue.startsWith('Already') ? 'var(--lx-muted)' : '#fca5a5') : 'var(--lx-green, #22c55e)' }}>
+                  <td className="muted">{p.row}</td>
+                  <td>{p.name || '—'}</td>
+                  <td>{p.email || '—'}</td>
+                  <td style={{ color: p.issue ? (p.issue.startsWith('Already') ? 'var(--muted)' : 'var(--red)') : 'var(--green)', fontWeight: 500 }}>
                     {p.issue || 'OK'}
                   </td>
                 </tr>
@@ -111,9 +111,9 @@ export const AddCandidatesModal: React.FC<Props> = ({ batchId, existingCount, ex
       {blocking.length > 0 && <ErrorNote message={`Fix ${blocking.length} row(s) marked in red, then add again.`} />}
       {overLimit && <ErrorNote message={`That would make ${existingCount + toAdd.length} candidates; the limit is ${MAX_PER_BATCH}.`} />}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-        <button className="lx-restored-btn" onClick={onClose}>Cancel</button>
-        <button className="lx-restored-btn primary" onClick={submit} disabled={saving || !toAdd.length || blocking.length > 0 || overLimit}>
+      <div className="modal-foot">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={submit} disabled={saving || !toAdd.length || blocking.length > 0 || overLimit}>
           {saving ? 'Adding…' : `Add ${toAdd.length} candidate${toAdd.length === 1 ? '' : 's'}`}
         </button>
       </div>

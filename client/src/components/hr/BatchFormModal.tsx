@@ -40,23 +40,25 @@ export const BatchFormModal: React.FC<Props> = ({ batch, onClose, onSaved }) => 
       <form onSubmit={submit}>
         <ErrorNote message={error} />
         <Field label="Batch name">
-          <input className="lx-input" required maxLength={120} value={name} onChange={e => setName(e.target.value)} placeholder="Batch 1 – 24 Oct" />
+          <input className="input" required maxLength={120} value={name} onChange={e => setName(e.target.value)} placeholder="Batch 1 – 24 Oct" />
         </Field>
-        <Field label="Date">
-          <input className="lx-input" type="date" required value={batchDate} onChange={e => setBatchDate(e.target.value)} />
-        </Field>
-        <Field label="Job role" hint="The agent mentions this, and resume questions are written for it.">
-          <input className="lx-input" required maxLength={120} value={jobRole} onChange={e => setJobRole(e.target.value)} placeholder="Backend Engineer" />
-        </Field>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0 14px' }}>
+          <Field label="Job role" hint="The agent mentions this, and resume questions are written for it.">
+            <input className="input" required maxLength={120} value={jobRole} onChange={e => setJobRole(e.target.value)} placeholder="Backend Engineer" />
+          </Field>
+          <Field label="Date">
+            <input className="input" type="date" required value={batchDate} onChange={e => setBatchDate(e.target.value)} />
+          </Field>
+        </div>
         <Field label="Company name (optional)">
-          <input className="lx-input" maxLength={120} value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Made-up company for the demo" />
+          <input className="input" maxLength={120} value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Made-up company for the demo" />
         </Field>
         <Field label="Job description (optional)" hint="Helps the brain judge fit at the end of the call.">
-          <textarea className="lx-input" rows={4} maxLength={4000} value={jobDescription} onChange={e => setJobDescription(e.target.value)} style={{ resize: 'vertical' }} />
+          <textarea className="textarea" rows={4} maxLength={4000} value={jobDescription} onChange={e => setJobDescription(e.target.value)} />
         </Field>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" className="lx-restored-btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="lx-restored-btn primary" disabled={saving}>{saving ? 'Saving…' : batch ? 'Save' : 'Create batch'}</button>
+        <div className="modal-foot">
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : batch ? 'Save' : 'Create batch'}</button>
         </div>
       </form>
     </Modal>

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Copy, Link2, Trash2, UserPlus } from 'lucide-react';
+import { CheckCircle2, Copy, Link2, RotateCcw, Trash2, UserPlus, Users } from 'lucide-react';
 import { api } from '../../services/api';
 import { CandidateRow, InviteLinkResult } from '../../types';
-import { ErrorNote, Modal } from '../ui/Modal';
+import { EmptyState, ErrorNote, Modal } from '../ui/Modal';
 import { AddCandidatesModal } from './AddCandidatesModal';
 import { StatusBadge } from './StatusBadge';
 
@@ -35,7 +35,7 @@ export const CandidatesPanel: React.FC<Props> = ({ batchId, candidates, onReload
     try {
       const { invite_link } = await api.createInviteLink(c.id);
       setNotice(await copy(invite_link)
-        ? `Invite link for ${c.name} copied. It works once.`
+        ? `Invite link for ${c.name} copied. Send it to them. It works once.`
         : `Invite link for ${c.name}: ${invite_link}`);
     } catch (err: any) {
       setError(err.message);
@@ -71,57 +71,84 @@ export const CandidatesPanel: React.FC<Props> = ({ batchId, candidates, onReload
     }
   };
 
+  const retake = async (c: CandidateRow) => {
+    if (!window.confirm(`Let ${c.name} take the call again? Their earlier answers stay saved.`)) return;
+    setBusyId(c.id);
+    setError(null);
+    try {
+      await api.allowRetake(c.id);
+      setNotice(`${c.name} can take the call again. Send a new invite link if they are signed out.`);
+      await onReload();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const allLinksText = (links || []).filter(l => l.invite_link).map(l => `${l.name} <${l.email}>: ${l.invite_link}`).join('\n');
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-        <button className="lx-restored-btn primary" onClick={() => setAdding(true)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <UserPlus size={14} /> Add candidates
+    <div className="stack">
+      <div className="row-wrap">
+        <p className="muted small grow">
+          No emails are sent. Copy each candidate's one-time link and share it with them; they open it to upload a resume and take the call.
+        </p>
+        <button className="btn" onClick={linksForAll} disabled={!candidates.length || busyId !== null}>
+          <Link2 size={15} /> {busyId === 'all' ? 'Creating links…' : 'Links for everyone'}
         </button>
-        <button className="lx-restored-btn" onClick={linksForAll} disabled={!candidates.length || busyId !== null} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Link2 size={14} /> {busyId === 'all' ? 'Creating links…' : 'Invite links for everyone'}
-        </button>
+        <button className="btn btn-primary" onClick={() => setAdding(true)}><UserPlus size={15} /> Add candidates</button>
       </div>
       <ErrorNote message={error} />
-      {notice && <p role="status" style={{ fontSize: 13, color: 'var(--lx-green, #22c55e)', wordBreak: 'break-all' }}>{notice}</p>}
-
-      {candidates.length === 0 ? (
-        <div style={{ padding: 16, border: '1px dashed var(--lx-border)', borderRadius: 8, color: 'var(--lx-muted)', fontSize: 14 }}>
-          No candidates yet. Add them from a CSV with Name and Email columns.
-        </div>
-      ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ textAlign: 'left', color: 'var(--lx-muted)' }}>
-                {['Name', 'Email', 'Status', ''].map((h, i) => <th key={i} style={{ padding: '6px 8px', borderBottom: '1px solid var(--lx-border)' }}>{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {candidates.map(c => (
-                <tr key={c.id}>
-                  <td style={{ padding: '7px 8px' }}>{c.name}</td>
-                  <td style={{ padding: '7px 8px', color: 'var(--lx-muted)' }}>{c.email}</td>
-                  <td style={{ padding: '7px 8px' }}><StatusBadge status={c.status} /></td>
-                  <td style={{ padding: '7px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    {!['completed', 'failed'].includes(c.status) && (
-                      <button className="lx-restored-btn" onClick={() => copyLinkFor(c)} disabled={busyId !== null} title="Create and copy a one-time invite link" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 4 }}>
-                        <Copy size={13} /> {busyId === c.id ? '…' : 'Invite link'}
-                      </button>
-                    )}
-                    {c.status === 'invited' && (
-                      <button className="lx-restored-btn" onClick={() => remove(c)} disabled={busyId !== null} aria-label={`Remove ${c.name}`} title="Remove">
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {notice && (
+        <div role="status" className="alert alert-success" style={{ wordBreak: 'break-all', marginBottom: 0 }}>
+          <CheckCircle2 size={15} /><span>{notice}</span>
         </div>
       )}
+
+      <div className="card">
+        {candidates.length === 0 ? (
+          <EmptyState icon={<Users size={20} />} title="No candidates yet">
+            Add candidates from a CSV with Name and Email columns, or paste them in.
+          </EmptyState>
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr><th>Name</th><th>Email</th><th>Status</th><th className="actions"><span className="sr-only">Actions</span></th></tr>
+              </thead>
+              <tbody>
+                {candidates.map(c => (
+                  <tr key={c.id}>
+                    <td className="strong">{c.name}</td>
+                    <td className="muted">{c.email}</td>
+                    <td><StatusBadge status={c.status} /></td>
+                    <td className="actions">
+                      <div className="btn-group">
+                        {!['completed', 'failed'].includes(c.status) && (
+                          <button className="btn btn-sm" onClick={() => copyLinkFor(c)} disabled={busyId !== null} title="Create and copy a one-time invite link">
+                            <Copy size={14} /> {busyId === c.id ? 'Copying…' : 'Copy invite link'}
+                          </button>
+                        )}
+                        {c.status === 'failed' && (
+                          <button className="btn btn-sm" onClick={() => retake(c)} disabled={busyId !== null} title="Let this candidate take the call again">
+                            <RotateCcw size={14} /> Allow retake
+                          </button>
+                        )}
+                        {c.status === 'invited' && (
+                          <button className="btn btn-ghost btn-icon btn-danger" onClick={() => remove(c)} disabled={busyId !== null} aria-label={`Remove ${c.name}`} title="Remove">
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {adding && (
         <AddCandidatesModal
@@ -139,24 +166,23 @@ export const CandidatesPanel: React.FC<Props> = ({ batchId, candidates, onReload
 
       {links && (
         <Modal title="Invite links" onClose={() => setLinks(null)} maxWidth={720}>
-          <p style={{ fontSize: 13, color: 'var(--lx-muted)', marginTop: 0 }}>
-            Each link signs that candidate in once. Share each link only with its candidate. Generate a new one if it has been used or has expired.
+          <p className="small muted mb">
+            Each link signs that candidate in once. Share each link only with its candidate, and make a new one if it has been used or has expired.
           </p>
-          <button className="lx-restored-btn" onClick={async () => setNotice((await copy(allLinksText)) ? 'All invite links copied.' : 'Copy failed. Select the links below instead.')}
-            disabled={!allLinksText} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-            <Copy size={13} /> Copy all
+          <button className="btn mb" onClick={async () => setNotice((await copy(allLinksText)) ? 'All invite links copied.' : 'Copy failed. Select the links below instead.')} disabled={!allLinksText}>
+            <Copy size={14} /> Copy all
           </button>
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+          <ul className="list">
             {links.map(l => (
-              <li key={l.candidate_id} style={{ padding: '8px 0', borderBottom: '1px solid var(--lx-border)', fontSize: 13 }}>
-                <div><strong>{l.name}</strong> <span style={{ color: 'var(--lx-muted)' }}>{l.email}</span></div>
+              <li key={l.candidate_id} className="list-item" style={{ padding: '12px 0', flexDirection: 'column', gap: 6 }}>
+                <div><strong>{l.name}</strong> <span className="muted small">{l.email}</span></div>
                 {l.invite_link ? (
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
-                    <input className="lx-input" readOnly value={l.invite_link} onFocus={e => e.target.select()} style={{ fontSize: 11, fontFamily: 'monospace' }} aria-label={`Invite link for ${l.name}`} />
-                    <button className="lx-restored-btn" onClick={() => copy(l.invite_link!)} aria-label={`Copy link for ${l.name}`}><Copy size={13} /></button>
+                  <div className="row" style={{ width: '100%' }}>
+                    <input className="input mono" readOnly value={l.invite_link} onFocus={e => e.target.select()} style={{ fontSize: 11.5 }} aria-label={`Invite link for ${l.name}`} />
+                    <button className="btn btn-icon" style={{ height: 38, width: 38 }} onClick={() => copy(l.invite_link!)} aria-label={`Copy link for ${l.name}`}><Copy size={14} /></button>
                   </div>
                 ) : (
-                  <div style={{ color: '#fca5a5', marginTop: 4 }}>{l.error}</div>
+                  <div className="small" style={{ color: 'var(--red)' }}>{l.error}</div>
                 )}
               </li>
             ))}

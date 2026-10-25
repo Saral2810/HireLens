@@ -1,14 +1,16 @@
 import { Router } from 'express';
 import db from '../config/db.js';
 import { ROLES } from '../middleware/auth.js';
+import ExcelJS from 'exceljs';
 import { DEFAULT_HR_QUESTIONS } from '../services/questionTemplates.js';
+import { buildResultRows, exportTable, toCsv } from '../services/results.js';
 import {
   validateBatchInput, validateQuestionInput, normalizeCandidateRows, MAX_CANDIDATES_PER_BATCH
 } from '../utils/validation.js';
 
 /**
  * HR (super-admin) API. Mounted at /api/hr behind requireAuth + requireRole('superadmin').
- * Phase D: invite links. Phase E: batches, questions, candidates. Phase H adds results.
+ * Phase D: invite links. Phase E: batches, questions, candidates. Phase H: results, export, retakes.
  */
 const router = Router();
 
@@ -231,6 +233,93 @@ router.post('/batches/:id/invite-links', async (req, res, next) => {
       }
     }
     res.json({ links, note: 'Each link works once. Generate new links for anyone whose link has been used or has expired.' });
+  } catch (err) { next(err); }
+});
+
+/** POST /api/hr/candidates/:id/allow-retake → a failed candidate may take the call again. */
+router.post('/candidates/:id/allow-retake', async (req, res, next) => {
+  try {
+    const candidate = await db.getCandidate(req.params.id);
+    if (!candidate) return notFound(res, 'Candidate');
+    if (candidate.status !== 'failed') {
+      return res.status(409).json({ error: 'Conflict', message: 'Only a candidate whose call did not finish can retake it.' });
+    }
+    // Earlier calls and answers are kept; the results show the newest call.
+    const updated = await db.updateCandidate(candidate.id, { status: candidate.resume_path ? 'resume_uploaded' : 'invited', failure_reason: null });
+    res.json({ candidate_id: candidate.id, status: updated.status, note: 'The candidate can open the portal and start the call again. Send a new invite link if they are signed out.' });
+  } catch (err) { next(err); }
+});
+
+// ── Results (Phase H) ─────────────────────────────────────────────────────
+
+// Recording and resume links stop working after 10 minutes.
+const SIGNED_URL_SECONDS = 10 * 60;
+
+async function loadResults(batch) {
+  const [questions, candidates] = await Promise.all([db.listQuestions(batch.id), db.listCandidates(batch.id)]);
+  const calls = await db.listCallsForCandidates(candidates.map(c => c.id));
+  const answers = await db.listAnswersForCalls(calls.map(c => c.id));
+  return { questions, rows: buildResultRows({ candidates, calls, answers }) };
+}
+
+/** GET /api/hr/batches/:id/results → { batch, questions, rows } (one row per candidate, newest call). */
+router.get('/batches/:id/results', async (req, res, next) => {
+  try {
+    const batch = await db.getBatch(req.params.id);
+    if (!batch) return notFound(res, 'Batch');
+    res.json({ batch, ...(await loadResults(batch)) });
+  } catch (err) { next(err); }
+});
+
+/**
+ * GET /api/hr/calls/:id → the whole call: answers, transcript, and 10-minute links to the
+ * recording and the resume.
+ */
+router.get('/calls/:id', async (req, res, next) => {
+  try {
+    const call = await db.getCall(req.params.id);
+    if (!call) return notFound(res, 'Call');
+    const [candidate, answers] = await Promise.all([db.getCandidate(call.candidate_id), db.listAnswers(call.id)]);
+    const link = (bucket, path) => (path ? db.signedUrl(bucket, path, SIGNED_URL_SECONDS).catch(() => null) : null);
+    const [recordingUrl, resumeUrl] = await Promise.all([link('recordings', call.recording_path), link('resumes', candidate?.resume_path)]);
+    const [row] = buildResultRows({ candidates: [candidate], calls: [call], answers });
+    res.json({
+      ...row,
+      transcript: call.transcript || [],
+      recording_url: recordingUrl,
+      resume_url: resumeUrl,
+      links_expire_in_seconds: SIGNED_URL_SECONDS
+    });
+  } catch (err) { next(err); }
+});
+
+/** GET /api/hr/batches/:id/export?format=csv|xlsx → file download of the results table. */
+router.get('/batches/:id/export', async (req, res, next) => {
+  try {
+    const format = String(req.query.format || 'csv').toLowerCase();
+    if (!['csv', 'xlsx'].includes(format)) return badRequest(res, ['format must be csv or xlsx.']);
+    const batch = await db.getBatch(req.params.id);
+    if (!batch) return notFound(res, 'Batch');
+    const { questions, rows } = await loadResults(batch);
+    const table = exportTable(rows, questions);
+    const base = `${batch.name}-${batch.batch_date}`.replace(/[^\w.-]+/g, '_').slice(0, 80) || 'results';
+    res.set('Content-Disposition', `attachment; filename="${base}.${format}"`);
+
+    if (format === 'csv') {
+      res.type('text/csv; charset=utf-8').send(toCsv(table));
+      return;
+    }
+    const book = new ExcelJS.Workbook();
+    const sheet = book.addWorksheet('Results', { views: [{ state: 'frozen', ySplit: 1 }] });
+    sheet.addRow(table.headers).font = { bold: true };
+    table.rows.forEach(r => sheet.addRow(r));
+    sheet.columns.forEach((col, i) => {
+      const longest = Math.max(...[table.headers[i], ...table.rows.map(r => r[i])].map(v => String(v ?? '').split('\n')[0].length));
+      col.width = Math.min(60, Math.max(10, longest + 2));
+      col.alignment = { vertical: 'top', wrapText: true };
+    });
+    res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(Buffer.from(await book.xlsx.writeBuffer()));
   } catch (err) { next(err); }
 });
 
