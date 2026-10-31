@@ -1,0 +1,12 @@
+{
+  "generated_at": "2026-10-26T19:35:10.654Z",
+  "note": "All Gnani/LLM traffic was answered by in-process fakes; no credits were used. Times are real-world equivalents (measured × scale).",
+  "scenarios": [],
+  "memory_stress": {
+    "uploads": 20,
+    "ok": 20,
+    "rss_before_mb": 118,
+    "peak_rss_mb": 173,
+    "added_mb": 55
+  }
+}

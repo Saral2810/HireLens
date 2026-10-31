@@ -1,19 +1,28 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Building2, CalendarDays, Check, Copy, Info, Pencil, Play, Square, Trash2 } from 'lucide-react';
+import { AlarmClock, ArrowLeft, Building2, CalendarDays, Check, Copy, Info, Pencil, Play, Square, Trash2 } from 'lucide-react';
 import { api } from '../../services/api';
 import { BatchDetail, CandidateStatus } from '../../types';
 import { BatchFormModal } from '../../components/hr/BatchFormModal';
+import { DeleteCampaignModal, deletedNotice } from '../../components/hr/DeleteCampaignModal';
 import { QuestionEditor } from '../../components/hr/QuestionEditor';
 import { CandidatesPanel } from '../../components/hr/CandidatesPanel';
 import { ResultsTable } from '../../components/hr/ResultsTable';
 import { CampaignBadge } from '../../components/hr/StatusBadge';
 import { ErrorNote } from '../../components/ui/Modal';
+import { ScheduleModal } from '../../components/hr/ScheduleModal';
+import { formatWhen } from '../../lib/schedule';
 import { CampaignProgress, formatDate } from './CampaignsPage';
 
 type Tab = 'overview' | 'candidates' | 'questions' | 'results';
 
 const candidateLink = () => `${window.location.origin}/login?as=candidate`;
+
+export function runNotice(emails?: { configured: boolean; queued: number }): string {
+  if (!emails?.configured) return "Campaign is live. Invite emails are not set up (SMTP in .env), so copy each candidate's link from the Candidates tab.";
+  if (!emails.queued) return 'Campaign is live. Everyone has already been emailed their invite.';
+  return `Campaign is live. Sending invite emails to ${emails.queued} candidate${emails.queued === 1 ? '' : 's'}; the Candidates tab shows each one as it goes out.`;
+}
 
 /** One campaign: overview with Run/Close, candidates, HR questions and results. */
 export const CampaignPage: React.FC = () => {
@@ -23,6 +32,8 @@ export const CampaignPage: React.FC = () => {
   const [batch, setBatch] = useState<BatchDetail | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
   const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState<string | null>((location.state as { notice?: string } | null)?.notice || null);
@@ -41,12 +52,12 @@ export const CampaignPage: React.FC = () => {
   }, [campaignId]);
   useEffect(() => { load(); }, [load]);
 
-  const act = async (fn: () => Promise<unknown>, message: string) => {
+  const act = async <T,>(fn: () => Promise<T>, message: string | ((result: T) => string)) => {
     setBusy(true);
     setError(null);
     try {
-      await fn();
-      setNotice(message);
+      const result = await fn();
+      setNotice(typeof message === 'function' ? message(result) : message);
       await load();
     } catch (err: any) {
       setError(err.message);
@@ -55,15 +66,6 @@ export const CampaignPage: React.FC = () => {
     }
   };
 
-  const remove = async () => {
-    if (!batch || !window.confirm(`Delete "${batch.name}" with its questions and candidates? This cannot be undone.`)) return;
-    try {
-      await api.deleteBatch(batch.id);
-      navigate('/hr/campaigns', { replace: true });
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
 
   const copyLink = async () => {
     try { await navigator.clipboard.writeText(candidateLink()); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* shown below anyway */ }
@@ -90,7 +92,7 @@ export const CampaignPage: React.FC = () => {
       {back}
       <div className="page-head">
         <div>
-          <div className="row mb-sm"><CampaignBadge status={status} /><span className="label">{batch.launched_at ? `Running since ${new Date(batch.launched_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : 'Not running yet'}</span></div>
+          <div className="row mb-sm"><CampaignBadge status={status} scheduled={!!batch.scheduled_at} /><span className="label">{batch.launched_at ? `Running since ${new Date(batch.launched_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : 'Not running yet'}</span></div>
           <h1>{batch.name}</h1>
           <div className="row-wrap small muted mt-sm" style={{ gap: 14 }}>
             <span className="strong" style={{ color: 'var(--text-2)' }}>{batch.job_role}</span>
@@ -100,17 +102,32 @@ export const CampaignPage: React.FC = () => {
         </div>
         <div className="btn-group">
           <button className="btn" onClick={() => setEditing(true)}><Pencil size={14} /> Edit</button>
-          {status === 'draft' && counts.invited === counts.total && <button className="btn btn-danger" onClick={remove}><Trash2 size={14} /> Delete</button>}
+          <button className="btn btn-danger" onClick={() => setDeleting(true)}><Trash2 size={14} /> Delete</button>
+          {status !== 'closed' && (
+            <button className="btn" disabled={busy || (status === 'draft' && counts.total === 0)} title={status === 'draft' && counts.total === 0 ? 'Add candidates first' : undefined} onClick={() => setScheduling(true)}>
+              <AlarmClock size={14} /> {status === 'draft' ? (batch.scheduled_at ? 'Reschedule' : 'Schedule') : 'Close time'}
+            </button>
+          )}
           {status === 'live'
             ? <button className="btn" disabled={busy} onClick={() => window.confirm('Close this campaign? Candidates who have not finished will not be able to start a call.') && act(() => api.closeCampaign(batch.id), 'Campaign closed. Results stay available.')}><Square size={14} /> Close</button>
             : <button className="btn btn-primary" disabled={busy || counts.total === 0} title={counts.total === 0 ? 'Add candidates first' : undefined}
-                onClick={() => act(() => api.runCampaign(batch.id), 'Campaign is live. Candidates can sign in and take the call.')}>
+                onClick={() => act(() => api.runCampaign(batch.id), ({ emails }) => runNotice(emails))}>
                 <Play size={14} /> {status === 'closed' ? 'Reopen' : 'Run campaign'}
               </button>}
         </div>
       </div>
       <ErrorNote message={error} />
       {notice && <div className="alert" role="status"><Check size={15} /><span>{notice}</span></div>}
+      {(batch.scheduled_at || batch.closes_at) && (
+        <div className="alert alert-info" role="status">
+          <AlarmClock size={15} />
+          <span className="grow">
+            {status === 'draft' && batch.scheduled_at && <>Starts by itself on <strong>{formatWhen(batch.scheduled_at)}</strong>; every candidate is emailed their invite then. </>}
+            {batch.closes_at && <>Closes by itself on <strong>{formatWhen(batch.closes_at)}</strong>.</>}
+          </span>
+          <button className="btn btn-sm" disabled={busy} onClick={() => act(() => api.unscheduleCampaign(batch.id), 'Schedule removed.')}>Remove schedule</button>
+        </div>
+      )}
 
       <div className="tabs" role="tablist">
         {tabs.map(t => (
@@ -134,9 +151,13 @@ export const CampaignPage: React.FC = () => {
             <h4 className="row"><Info size={15} /> How candidates join</h4>
             <p className="muted small mt-sm" style={{ lineHeight: 1.6 }}>
               {status === 'live'
-                ? 'Share the sign-in link below with your candidates. They choose "Candidate", sign in with Google or an email code using the address you added, and their call is waiting in their dashboard. No emails are sent by the app.'
+                ? (batch.email?.configured
+                  ? 'Each candidate gets an email with a personal link that opens their screening directly. The Candidates tab shows who was emailed and lets you send it again. Candidates can also use the sign-in page below with the email you added.'
+                  : 'Invite emails are not set up yet (SMTP settings in .env). Open the Candidates tab and send each person their own invite link, or share the sign-in page below.')
                 : status === 'draft'
-                  ? 'This campaign is a draft: candidates cannot see it yet. Add candidates, check the questions, then press Run campaign.'
+                  ? (batch.scheduled_at
+                    ? `This campaign is scheduled: candidates cannot see it until ${formatWhen(batch.scheduled_at)}, when it starts and their invite emails go out. You can still add candidates and change questions.`
+                    : 'This campaign is a draft: candidates cannot see it yet. Add candidates, check the questions, then press Run campaign, or Schedule it for a later day.')
                   : 'This campaign is closed: candidates who have not finished cannot start a call. Reopen it to continue.'}
             </p>
             <div className="row mt">
@@ -146,15 +167,29 @@ export const CampaignPage: React.FC = () => {
           </div>
         </div>
       )}
-      {tab === 'candidates' && <CandidatesPanel batchId={batch.id} candidates={batch.candidates} onReload={load} />}
+      {tab === 'candidates' && <CandidatesPanel batchId={batch.id} candidates={batch.candidates} live={status === 'live'} emailConfigured={!!batch.email?.configured} onReload={load} />}
       {tab === 'questions' && <QuestionEditor batchId={batch.id} questions={batch.questions} onChange={(questions) => setBatch({ ...batch, questions })} />}
       {tab === 'results' && <ResultsTable batchId={batch.id} onCandidatesChanged={load} />}
 
+      {scheduling && (
+        <ScheduleModal
+          batch={batch}
+          onClose={() => setScheduling(false)}
+          onSaved={(updated) => { setBatch({ ...batch, ...updated }); setScheduling(false); setNotice(updated.scheduled_at ? `Scheduled. The campaign starts on ${formatWhen(updated.scheduled_at)}.` : 'Close time saved.'); }}
+        />
+      )}
       {editing && (
         <BatchFormModal
           batch={batch}
           onClose={() => setEditing(false)}
-          onSaved={(updated) => { setBatch({ ...batch, ...updated }); setEditing(false); }}
+          onSaved={(updated) => { setBatch({ ...batch, ...updated }); setEditing(false); setNotice('Campaign details saved. Calls that start from now use them.'); }}
+        />
+      )}
+      {deleting && (
+        <DeleteCampaignModal
+          batch={{ ...batch, counts }}
+          onClose={() => setDeleting(false)}
+          onDeleted={(result) => navigate('/hr/campaigns', { replace: true, state: { notice: deletedNotice(batch.name, result) } })}
         />
       )}
     </div>

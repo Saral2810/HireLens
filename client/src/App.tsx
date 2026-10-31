@@ -5,6 +5,7 @@ import { isHrRole } from './types';
 import { AppHeader } from './components/layout/AppHeader';
 import { LandingPage } from './pages/public/LandingPage';
 import { LoginPage } from './pages/public/LoginPage';
+import { JoinPage } from './pages/public/JoinPage';
 import { DashboardPage } from './pages/hr/DashboardPage';
 import { CampaignsPage } from './pages/hr/CampaignsPage';
 import { NewCampaignPage } from './pages/hr/NewCampaignPage';
@@ -23,6 +24,9 @@ export const App: React.FC = () => {
   }, []);
 
   if (!sessionChecked) return null;
+
+  // The link from an invite email works whoever is signed in on this browser: it signs in as the candidate.
+  if (location.pathname === '/join') return <JoinPage />;
 
   if (!currentUser) {
     const wantsCandidate = location.pathname.startsWith('/candidate') || location.pathname.startsWith('/auth') || location.pathname.startsWith('/invite');

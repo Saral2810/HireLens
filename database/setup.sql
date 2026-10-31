@@ -2,7 +2,7 @@
 -- HR Screening Voice Agent — ONE-FILE DATABASE SETUP
 -- For a NEW Supabase project: paste into Supabase → SQL Editor → Run.
 -- Generated from migrations/20261025_hr_screening_schema.sql, 20261025_rls_private_helpers.sql,
--- 20261025_candidate_resume_questions.sql, 20261026_roles_campaigns.sql (in that order).
+-- 20261025_candidate_resume_questions.sql, 20261026_roles_campaigns.sql, 20261026_invite_emails.sql (in that order).
 -- (Step 1 drops the old legacy tables if present; on a fresh project it does nothing.)
 -- ==============================================================================
 
@@ -489,3 +489,37 @@ CREATE POLICY screening_files_hr_update ON storage.objects FOR UPDATE TO authent
   WITH CHECK (bucket_id IN ('resumes', 'recordings') AND (SELECT private.can_manage_folder((storage.foldername(name))[1])));
 CREATE POLICY screening_files_hr_delete ON storage.objects FOR DELETE TO authenticated
   USING (bucket_id IN ('resumes', 'recordings') AND (SELECT private.can_manage_folder((storage.foldername(name))[1])));
+
+-- ─── Invite emails ───────────────────────────────────────────────────────────
+-- Running a campaign emails each candidate a personal link (sent from the app's own SMTP mailbox,
+-- not Supabase). These columns show HR who was emailed and why an email failed.
+ALTER TABLE public.candidates
+  ADD COLUMN IF NOT EXISTS invite_email_sent_at timestamptz,
+  ADD COLUMN IF NOT EXISTS invite_email_error text;
+
+-- ─── Company briefing, call languages, fresher flag ──────────────────────────
+-- company_intro: HR's short intro about the company; the agent turns it into a spoken briefing.
+-- call_languages: the languages candidates may pick for this campaign's calls
+--   (mixed = English + Hindi, en = English, hi = Hindi).
+-- is_fresher: read from the resume at upload (null = not known); freshers are not asked
+--   notice period or current CTC.
+ALTER TABLE public.batches
+  ADD COLUMN IF NOT EXISTS company_intro text CHECK (company_intro IS NULL OR char_length(company_intro) <= 1500),
+  ADD COLUMN IF NOT EXISTS call_languages text[] NOT NULL DEFAULT ARRAY['mixed', 'en', 'hi']
+    CHECK (cardinality(call_languages) >= 1 AND call_languages <@ ARRAY['mixed', 'en', 'hi']);
+ALTER TABLE public.candidates
+  ADD COLUMN IF NOT EXISTS is_fresher boolean;
+
+-- ─── Campaign scheduling, general call questions ─────────────────────────────
+-- scheduled_at: a draft campaign starts by itself at this time and emails every candidate then.
+-- closes_at: a live campaign closes by itself at this time.
+-- answers.source 'general': the project and problem questions every call asks (and the
+--   "full-time experience or fresher?" check), between the opening and the resume questions.
+ALTER TABLE public.batches
+  ADD COLUMN IF NOT EXISTS scheduled_at timestamptz,
+  ADD COLUMN IF NOT EXISTS closes_at timestamptz;
+CREATE INDEX IF NOT EXISTS batches_scheduled_at_idx ON public.batches (scheduled_at) WHERE status = 'draft' AND scheduled_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS batches_closes_at_idx ON public.batches (closes_at) WHERE status = 'live' AND closes_at IS NOT NULL;
+
+ALTER TABLE public.answers DROP CONSTRAINT IF EXISTS answers_source_check;
+ALTER TABLE public.answers ADD CONSTRAINT answers_source_check CHECK (source IN ('intro', 'general', 'resume', 'hr'));

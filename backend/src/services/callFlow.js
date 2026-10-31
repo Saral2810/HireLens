@@ -1,3 +1,5 @@
+import { PHRASES } from './callLanguage.js';
+
 /**
  * ─── Call flow ──────────────────────────────────────────────────────────────
  * Pure helpers for the screening call state (no database, no network), used by routes/call.js.
@@ -9,10 +11,17 @@
 // The longest normal gap is one 60 s answer plus playback and processing.
 export const STALE_CALL_MS = 3 * 60 * 1000;
 
-export const NOT_READY_LINE = 'Koi baat nahi! Jab aap ready hon, tab is page par wapas aakar Start call dabaiye. Dhanyavaad.';
-export const MOVE_ON_LINE = 'Koi baat nahi, aage badhte hain.';
+// The Hinglish lines; callLanguage.js has them in every call language.
+export const NOT_READY_LINE = PHRASES.mixed.notReady;
+export const MOVE_ON_LINE = PHRASES.mixed.moveOn;
 export const NOT_READY_REASON = 'The candidate was not ready to talk.';
 export const START_FAILED_PREFIX = 'Could not start:';
+
+// "Not ready" ends a call without using an attempt, but only this many times; the next "not ready"
+// fails the call (it then counts as an attempt), so nobody can restart for free forever (BUG-07).
+export const MAX_FREE_NOT_READY = 2;
+export const NOT_READY_LIMIT_LINE = PHRASES.mixed.notReadyLimit;
+export const NOT_READY_LIMIT_REASON = 'The candidate said they were not ready three times. HR can allow a retake.';
 
 // A candidate may take the call this many times on their own; HR can allow more with Retake.
 // Calls ended with "not ready" or that failed before the first question do not count.
@@ -25,12 +34,13 @@ export function retriesLeft(calls = []) {
   return Math.max(0, MAX_CALL_ATTEMPTS - used);
 }
 
-// Why a call ended early; the client may only send these.
-export const END_REASONS = {
+// Why a call ended early; the client may only send these. No prototype, so names like "constructor"
+// sent by a client are not mistaken for reasons (BUG-06).
+export const END_REASONS = Object.freeze(Object.assign(Object.create(null), {
   ended_by_candidate: 'The candidate ended the call.',
   left_page: 'The candidate left the call page.',
   client_error: 'The call stopped because of a technical problem (connection or speech service).'
-};
+}));
 
 /**
  * The question to ask now: the first one in the plan without a saved answer.
@@ -48,6 +58,40 @@ export function currentStep(plan, answers = [], transcript = []) {
 /** The question after `position`, or null at the end of the plan. */
 export function questionAfter(plan, position) {
   return (plan?.questions || []).find(q => q.position > position) || null;
+}
+
+/** True once the candidate has said in this call that they are a fresher (marked on their transcript line). */
+export function isFresherCall(transcript = []) {
+  return transcript.some(e => e?.speaker === 'candidate' && e.fresher === true);
+}
+
+/**
+ * The next question to ask after `position`. For a fresher, the notice period and current CTC
+ * questions (fresher_skip) are passed over and returned in `notAsked`, to be saved as not asked.
+ * @returns {{ question: object|null, notAsked: object[] }} question null = end of the plan
+ */
+export function nextQuestion(plan, position, { fresher = false } = {}) {
+  const notAsked = [];
+  for (const q of plan?.questions || []) {
+    if (q.position <= position) continue;
+    if (fresher && q.fresher_skip) { notAsked.push(q); continue; }
+    return { question: q, notAsked };
+  }
+  return { question: null, notAsked };
+}
+
+/** The answers row for a question left out because the candidate is a fresher. */
+export function notAskedRow(question) {
+  return {
+    position: question.position,
+    question_text: question.question_text,
+    source: question.source,
+    answer_type: question.answer_type,
+    answer_text: null,
+    extracted_value: { not_asked: 'fresher' },
+    outcome: 'skipped',
+    attempts: 1
+  };
 }
 
 /** Latest moment something was saved for this call. */
@@ -74,12 +118,20 @@ export function line(speaker, text, position = null, at = new Date()) {
 /**
  * The answers row for a question that is finished (accepted or skipped).
  * @param {object} question plan question
- * @param {{ action: string, extracted: object|null }} decision
+ * @param {{ action: string, extracted: object|null, joinAnswers?: boolean }} decision
+ *   joinAnswers = the answer came in two parts (a follow-up question was asked): both are kept
  * @param {string[]} heard every transcript the candidate gave for this question, oldest first
  */
 export function answerRow(question, decision, heard) {
   const said = heard.map(t => (t || '').trim()).filter(Boolean);
   const skipped = decision.action === 'skip';
+  const joined = said.join(' / ') || null;
+  if (decision.joinAnswers && !skipped) {
+    return {
+      position: question.position, question_text: question.question_text, source: question.source, answer_type: question.answer_type,
+      answer_text: joined, extracted_value: joined ? { text: joined } : null, outcome: joined ? 'answered' : 'skipped', attempts: Math.max(1, heard.length)
+    };
+  }
   return {
     position: question.position,
     question_text: question.question_text,
@@ -99,3 +151,15 @@ export function recordingExtension(mimeType) {
 }
 
 export const RECORDING_CONTENT_TYPES = { webm: 'audio/webm', ogg: 'audio/ogg', wav: 'audio/wav', mp3: 'audio/mpeg' };
+
+/** True when the file's first bytes match its claimed audio type (WebM/EBML, Ogg, RIFF WAV, MP3). */
+export function recordingLooksLike(ext, head) {
+  const b = Buffer.from(head || []);
+  switch (ext) {
+    case 'webm': return b.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+    case 'ogg': return b.subarray(0, 4).toString('latin1') === 'OggS';
+    case 'wav': return b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WAVE';
+    case 'mp3': return b.subarray(0, 3).toString('latin1') === 'ID3' || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0);
+    default: return false;
+  }
+}

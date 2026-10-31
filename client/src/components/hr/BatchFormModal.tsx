@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { api } from '../../services/api';
-import { Batch } from '../../types';
+import { Batch, CallLanguage } from '../../types';
 import { ErrorNote, Field, Modal } from '../ui/Modal';
+import { ALL_CALL_LANGUAGES, CallLanguagesField } from './CallLanguagesField';
 
 interface Props {
   /** Existing batch to edit; omit to create a new one. */
@@ -12,12 +13,14 @@ interface Props {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-/** Create or edit a batch: name, date, job role, company and an optional job description. */
+/** Create or edit a batch: name, date, job role, company, company intro, call languages and an optional job description. */
 export const BatchFormModal: React.FC<Props> = ({ batch, onClose, onSaved }) => {
   const [name, setName] = useState(batch?.name ?? '');
   const [batchDate, setBatchDate] = useState(batch?.batch_date ?? today());
   const [jobRole, setJobRole] = useState(batch?.job_role ?? '');
   const [companyName, setCompanyName] = useState(batch?.company_name ?? '');
+  const [companyIntro, setCompanyIntro] = useState(batch?.company_intro ?? '');
+  const [languages, setLanguages] = useState<CallLanguage[]>(batch?.call_languages?.length ? batch.call_languages : ALL_CALL_LANGUAGES);
   const [jobDescription, setJobDescription] = useState(batch?.job_description ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +29,10 @@ export const BatchFormModal: React.FC<Props> = ({ batch, onClose, onSaved }) => 
     e.preventDefault();
     setSaving(true);
     setError(null);
-    const fields = { name, batch_date: batchDate, job_role: jobRole, company_name: companyName, job_description: jobDescription };
+    const fields = {
+      name, batch_date: batchDate, job_role: jobRole, company_name: companyName, company_intro: companyIntro,
+      job_description: jobDescription, call_languages: languages
+    };
     try {
       onSaved(batch ? await api.updateBatch(batch.id, fields) : await api.createBatch(fields));
     } catch (err: any) {
@@ -53,6 +59,10 @@ export const BatchFormModal: React.FC<Props> = ({ batch, onClose, onSaved }) => 
         <Field label="Company name (optional)">
           <input className="input" maxLength={120} value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Made-up company for the demo" />
         </Field>
+        <Field label="About the company" hint="2–4 sentences candidates should hear: what you do, who you work with, the team. The assistant turns it into a short spoken briefing.">
+          <textarea className="textarea" rows={3} maxLength={1500} value={companyIntro} onChange={e => setCompanyIntro(e.target.value)} />
+        </Field>
+        <CallLanguagesField value={languages} onChange={setLanguages} />
         <Field label="Job description (optional)" hint="Helps the brain judge fit at the end of the call.">
           <textarea className="textarea" rows={4} maxLength={4000} value={jobDescription} onChange={e => setJobDescription(e.target.value)} />
         </Field>

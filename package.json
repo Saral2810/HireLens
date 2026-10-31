@@ -10,11 +10,15 @@
   "scripts": {
     "start": "node backend/src/server.js",
     "dev": "node --watch backend/src/server.js",
+    "public": "node backend/scripts/public.js",
+    "check:setup": "node backend/scripts/checkSetup.js",
     "build": "npm --prefix client install && npm --prefix client run build",
     "client:install": "npm --prefix client install",
     "client:build": "npm --prefix client run build",
     "client:dev": "npm --prefix client run dev",
     "test": "node --import ./tests/setup.js --test \"tests/unit/*.test.js\"",
+    "test:qa": "node --import ./tests/qa/setup.js --test \"tests/qa/unit/*.test.js\" \"tests/qa/integration/*.test.js\"",
+    "qa:load": "node --import ./tests/qa/setup.js tests/qa/load/simulate100.js",
     "docker:build": "docker build -t hr-screening-voice-agent:latest .",
     "docker:run": "docker run -p 3000:3000 --env-file .env hr-screening-voice-agent:latest"
   },
@@ -25,6 +29,10 @@
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
     "multer": "^2.5.0",
+    "nodemailer": "^10.2.1",
     "unpdf": "^1.9.1"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

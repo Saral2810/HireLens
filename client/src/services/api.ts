@@ -1,4 +1,4 @@
-import { Analytics, AnswerType, Batch, BatchDetail, BatchResults, CallDetail, CallEndReason, Screening, StaffMember, CallStartResult, CallTurnResult, CandidatePortal, HrQuestion, InviteLinkResult, ResumeUploadResult, User } from '../types';
+import { Analytics, AnswerType, Batch, BatchDetail, BatchResults, CallDetail, CallEndReason, CallLanguage, StaffMember, CallStartResult, CallTurnResult, CandidatePortal, CandidateRow, EmailQueueResult, HrQuestion, InviteLinkResult, ResumeUploadResult, User } from '../types';
 
 const TOKEN_KEY = 'hr_auth_token';
 
@@ -33,7 +33,8 @@ class ApiService {
       if (response.status === 401) {
         window.dispatchEvent(new Event('hr:unauthorized'));
       }
-      throw new Error(body.message || body.error || `Request failed (${response.status})`);
+      // status and body travel with the error, e.g. so the call screen can wait when all lines are busy (429).
+      throw Object.assign(new Error(body.message || body.error || `Request failed (${response.status})`), { status: response.status, body });
     }
     return body as T;
   }
@@ -52,8 +53,23 @@ class ApiService {
   }
 
   // ── Candidate sign-in (Google or email code) ──
-  async googleSignIn(): Promise<{ enabled: boolean; url: string | null }> {
+  /** Whether Google's sign-in button is set up, and its client ID. */
+  async googleSignIn(): Promise<{ enabled: boolean; client_id: string | null }> {
     return this.request('/api/auth/google');
+  }
+
+  /** The ID token from Google's button → signed in (the server checks it with Supabase). */
+  async googleToken(credential: string, nonce: string): Promise<{ token: string; user: User }> {
+    const res = await this.request<{ token: string; user: User }>('/api/auth/google/token', { method: 'POST', body: JSON.stringify({ credential, nonce }) });
+    if (res.token) this.setAuthToken(res.token);
+    return res;
+  }
+
+  /** Personal link from the invite email → signed in as that candidate (the server makes the session). */
+  async joinScreening(token: string): Promise<{ token: string; user: User }> {
+    const res = await this.request<{ token: string; user: User }>('/api/auth/join', { method: 'POST', body: JSON.stringify({ token }) });
+    if (res.token) this.setAuthToken(res.token);
+    return res;
   }
 
   async sendEmailCode(email: string): Promise<{ sent: boolean; message: string }> {
@@ -66,21 +82,27 @@ class ApiService {
     return res;
   }
 
-  async screenings(): Promise<Screening[]> {
-    return this.request('/api/candidate/screenings');
-  }
 
   // ── HR dashboard, campaigns, team ──
   async analytics(): Promise<Analytics> {
     return this.request('/api/hr/analytics');
   }
 
-  async runCampaign(batchId: string): Promise<Batch> {
+  async runCampaign(batchId: string): Promise<Batch & { emails: EmailQueueResult }> {
     return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/run`, { method: 'POST' });
   }
 
   async closeCampaign(batchId: string): Promise<Batch> {
     return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/close`, { method: 'POST' });
+  }
+
+  /** Draft: starts (and emails invites) at start_at; close_at closes it later. Live: only close_at. ISO times. */
+  async scheduleCampaign(batchId: string, times: { start_at?: string | null; close_at?: string | null }): Promise<Batch> {
+    return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/schedule`, { method: 'POST', body: JSON.stringify(times) });
+  }
+
+  async unscheduleCampaign(batchId: string): Promise<Batch> {
+    return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/schedule`, { method: 'DELETE' });
   }
 
   /** Reads name + email rows from an .xlsx or .csv file (nothing is saved). */
@@ -126,6 +148,10 @@ class ApiService {
     return this.request(`/api/hr/candidates/${encodeURIComponent(candidateId)}/invite-link`, { method: 'POST' });
   }
 
+  async sendInviteEmail(candidateId: string): Promise<{ candidate_id: string; sent: boolean }> {
+    return this.request(`/api/hr/candidates/${encodeURIComponent(candidateId)}/send-invite`, { method: 'POST' });
+  }
+
   async createInviteLinks(batchId: string, candidateIds?: string[]): Promise<{ links: InviteLinkResult[]; note: string }> {
     return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/invite-links`, {
       method: 'POST', body: JSON.stringify(candidateIds ? { candidate_ids: candidateIds } : {})
@@ -140,16 +166,19 @@ class ApiService {
     return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}`);
   }
 
-  async createBatch(fields: { name: string; job_role: string; batch_date?: string; company_name?: string; job_description?: string }): Promise<Batch> {
+  async createBatch(fields: { name: string; job_role: string; batch_date?: string; company_name?: string; company_intro?: string; job_description?: string; call_languages?: CallLanguage[] }): Promise<Batch> {
     return this.request('/api/hr/batches', { method: 'POST', body: JSON.stringify(fields) });
   }
 
-  async updateBatch(batchId: string, fields: Partial<Pick<Batch, 'name' | 'job_role' | 'batch_date' | 'company_name' | 'job_description'>>): Promise<Batch> {
+  async updateBatch(batchId: string, fields: Partial<Pick<Batch, 'name' | 'job_role' | 'batch_date' | 'company_name' | 'company_intro' | 'job_description' | 'call_languages'>>): Promise<Batch> {
     return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}`, { method: 'PATCH', body: JSON.stringify(fields) });
   }
 
-  async deleteBatch(batchId: string): Promise<void> {
-    await this.request(`/api/hr/batches/${encodeURIComponent(batchId)}`, { method: 'DELETE' });
+  /** confirmName: the campaign's name, required once candidates have started. */
+  async deleteBatch(batchId: string, confirmName?: string): Promise<{ deleted: boolean; candidates: number; files_removed: number }> {
+    return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}`, {
+      method: 'DELETE', body: JSON.stringify(confirmName !== undefined ? { confirm_name: confirmName } : {})
+    });
   }
 
   async addQuestion(batchId: string, fields: { question_text: string; answer_type: AnswerType }): Promise<HrQuestion> {
@@ -172,8 +201,12 @@ class ApiService {
     return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/questions/order`, { method: 'PUT', body: JSON.stringify({ ids }) });
   }
 
-  async addCandidates(batchId: string, candidates: { name: string; email: string }[]): Promise<{ added: number; skipped_existing: number }> {
+  async addCandidates(batchId: string, candidates: { name: string; email: string }[]): Promise<{ added: number; skipped_existing: number; emails?: EmailQueueResult }> {
     return this.request(`/api/hr/batches/${encodeURIComponent(batchId)}/candidates`, { method: 'POST', body: JSON.stringify({ candidates }) });
+  }
+
+  async updateCandidate(candidateId: string, fields: { name?: string; email?: string }): Promise<CandidateRow & { emails: EmailQueueResult }> {
+    return this.request(`/api/hr/candidates/${encodeURIComponent(candidateId)}`, { method: 'PATCH', body: JSON.stringify(fields) });
   }
 
   async deleteCandidate(candidateId: string): Promise<void> {
@@ -213,12 +246,14 @@ class ApiService {
   }
 
   // ── Screening call (Phase G) ──
-  async startCall(): Promise<CallStartResult> {
-    return this.request('/api/candidate/call/start', { method: 'POST' });
+  async startCall(language: CallLanguage = 'mixed'): Promise<CallStartResult> {
+    return this.request('/api/candidate/call/start', { method: 'POST', body: JSON.stringify({ language }) });
   }
 
-  async callTurn(answer: Blob | null): Promise<CallTurnResult> {
+  /** turnId: the same id when this answer is sent again, so the server processes it only once. */
+  async callTurn(answer: Blob | null, turnId: string): Promise<CallTurnResult> {
     const form = new FormData();
+    form.append('turn_id', turnId);
     if (answer) form.append('audio', answer, 'answer.wav');
     else form.append('no_speech', '1');
     return this.request('/api/candidate/call/turn', { method: 'POST', body: form });

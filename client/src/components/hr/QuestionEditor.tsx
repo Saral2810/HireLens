@@ -92,7 +92,7 @@ export const QuestionEditor: React.FC<Props> = ({ batchId, questions, onChange }
     <div className="stack">
       <div className="alert alert-info" style={{ marginBottom: 0 }}>
         <ListChecks size={15} />
-        <span>The call opens with 3–5 questions about each candidate's own resume, then asks these in order. The assistant speaks them exactly as written, so Hinglish works well.</span>
+        <span>The call opens with 3–5 questions about each candidate's own resume, then asks these in order. Write them in Hinglish: candidates who pick English or Hindi hear a translation. For freshers, notice period and current CTC are skipped.</span>
       </div>
       <ErrorNote message={error} />
 

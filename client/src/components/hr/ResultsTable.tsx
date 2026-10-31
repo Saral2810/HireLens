@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, BarChart3, ChevronRight, Download, RefreshCw, RotateCcw } from 'lucide-react';
 import { api } from '../../services/api';
-import { ResultRow } from '../../types';
+import { HrQuestion, ResultRow } from '../../types';
 import { EmptyState, ErrorNote } from '../ui/Modal';
 import { ScorePill, StatusBadge } from './StatusBadge';
 import { CandidateResultDrawer } from './CandidateResultDrawer';
@@ -29,9 +29,20 @@ function sortValue(row: ResultRow, key: SortKey): string | number | null {
 export const days = (d: number | null) => (d === null ? '—' : d === 0 ? 'Immediate' : `${d} days`);
 export const lpa = (v: number | null) => (v === null ? "—" : `${v} LPA`);
 
+const sameText = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** HR's own questions get a column each; notice period and CTC already have theirs. */
+const customColumns = (questions: HrQuestion[]) => questions.filter(q => q.answer_type !== 'duration' && q.answer_type !== 'ctc');
+
+/** A candidate's answer to one HR question, matched by wording (like the export). */
+function answerFor(row: ResultRow, question: HrQuestion) {
+  return row.answers.find(a => a.source === 'hr' && sameText(a.question_text, question.question_text))?.display || '—';
+}
+
 /** Results tab: one row per candidate with the key answers, sortable, with CSV/Excel export. */
 export const ResultsTable: React.FC<{ batchId: string; onCandidatesChanged?: () => void }> = ({ batchId, onCandidatesChanged }) => {
   const [rows, setRows] = useState<ResultRow[] | null>(null);
+  const [questions, setQuestions] = useState<HrQuestion[]>([]);
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'fit_score', desc: true });
   const [openCallId, setOpenCallId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -39,7 +50,11 @@ export const ResultsTable: React.FC<{ batchId: string; onCandidatesChanged?: () 
 
   const load = useCallback(async () => {
     setError(null);
-    try { setRows((await api.getResults(batchId)).rows); } catch (err: any) { setError(err.message); }
+    try {
+      const results = await api.getResults(batchId);
+      setRows(results.rows);
+      setQuestions(customColumns(results.questions || []));
+    } catch (err: any) { setError(err.message); }
   }, [batchId]);
   useEffect(() => { load(); }, [load]);
 
@@ -125,6 +140,9 @@ export const ResultsTable: React.FC<{ batchId: string; onCandidatesChanged?: () 
                         </button>
                       </th>
                     ))}
+                    {questions.map(q => (
+                      <th key={q.id} title={q.question_text} style={{ minWidth: 140, maxWidth: 220 }}><span className="clamp-2">{q.question_text}</span></th>
+                    ))}
                     <th>Summary</th>
                     <th className="actions"><span className="sr-only">Actions</span></th>
                   </tr>
@@ -141,6 +159,9 @@ export const ResultsTable: React.FC<{ batchId: string; onCandidatesChanged?: () 
                       <td className="num nowrap">{days(r.notice_period_days)}</td>
                       <td className="num nowrap">{lpa(r.current_ctc_lpa)}</td>
                       <td className="num nowrap">{lpa(r.expected_ctc_lpa)}</td>
+                      {questions.map(q => (
+                        <td key={q.id} className="small" style={{ minWidth: 140, maxWidth: 220 }}><span className="clamp-2">{answerFor(r, q)}</span></td>
+                      ))}
                       <td className="muted small" style={{ minWidth: 180, maxWidth: 340 }}>
                         <span className="clamp-2">
                           {r.call?.summary || (r.status === 'failed' ? (r.failure_reason || r.call?.failure_reason) : r.call?.status === 'completed' ? 'Summary being written…' : '')}

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Upload } from 'lucide-react';
 import { api } from '../../services/api';
 import { readCandidatesCsv } from '../../lib/csv';
+import { EmailQueueResult } from '../../types';
 import { ErrorNote, Field, Modal } from '../ui/Modal';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -12,7 +13,7 @@ interface Props {
   existingCount: number;
   existingEmails: string[];
   onClose: () => void;
-  onAdded: (summary: { added: number; skipped_existing: number }) => void;
+  onAdded: (summary: { added: number; skipped_existing: number; emails?: EmailQueueResult }) => void;
 }
 
 /**
