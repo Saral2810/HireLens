@@ -87,22 +87,12 @@ const db = {
   async getCandidateForUser(userId) {
     const rows = unwrap(await requireClient()
       .from('candidates')
-      .select('id, batch_id, name, email, status, failure_reason, consent_at, resume_path, resume_questions, batch:batches!inner(id, name, batch_date, job_role, company_name, job_description, status)')
+      .select('id, batch_id, name, email, status, failure_reason, consent_at, resume_path, resume_questions, is_fresher, batch:batches!inner(id, name, batch_date, job_role, company_name, company_intro, call_languages, job_description, status)')
       .eq('user_id', userId)
       .neq('batch.status', 'draft')
       .order('created_at', { ascending: false })
       .limit(1));
     return rows?.[0] || null;
-  },
-
-  /** Every screening of the signed-in candidate (newest first), for their dashboard. */
-  async listScreeningsForUser(userId) {
-    return unwrap(await requireClient()
-      .from('candidates')
-      .select('id, status, created_at, batch:batches!inner(id, name, job_role, company_name, status)')
-      .eq('user_id', userId)
-      .neq('batch.status', 'draft')
-      .order('created_at', { ascending: false }));
   },
 
   /**
@@ -132,8 +122,44 @@ const db = {
     return (rows?.length || 0) > 0;
   },
 
+  /** Every screening for this email, in any campaign, with the campaign's owner. */
+  async listCandidatesByEmail(email) {
+    return unwrap(await requireClient()
+      .from('candidates')
+      .select('id, batch_id, user_id, batch:batches(id, created_by)')
+      .eq('email', String(email).trim().toLowerCase()));
+  },
+
   async linkCandidateUser(candidateId, userId) {
     unwrap(await requireClient().from('candidates').update({ user_id: userId }).eq('id', candidateId));
+  },
+
+  // ── Server-side sign-in: the browser never visits the Supabase address ──
+
+  /**
+   * Turns a magic link (made with auth.admin.generateLink) into a session right here, using its
+   * token hash, instead of sending the candidate's browser to <project>.supabase.co to open it.
+   * @returns {Promise<{ accessToken: string, user: { id: string, email: string } }>}
+   */
+  async exchangeLinkToken(tokenHash) {
+    const client = createAuthClient();
+    if (!client) throw Object.assign(new Error('Database not configured.'), { status: 503 });
+    const { data, error } = await client.auth.verifyOtp({ token_hash: tokenHash, type: 'magiclink' });
+    if (error || !data?.session) throw Object.assign(new Error('The sign-in link could not be used.'), { status: 502 });
+    return { accessToken: data.session.access_token, user: { id: data.user.id, email: data.user.email } };
+  },
+
+  /**
+   * Signs in with a Google ID token from Google's own sign-in button (Google checks the account;
+   * Supabase checks the token's signature, audience and nonce).
+   * @returns {Promise<{ accessToken: string, user: { id: string, email: string } }|null>} null = token refused
+   */
+  async signInWithGoogleIdToken(idToken, nonce) {
+    const client = createAuthClient();
+    if (!client) throw Object.assign(new Error('Database not configured.'), { status: 503 });
+    const { data, error } = await client.auth.signInWithIdToken({ provider: 'google', token: idToken, nonce });
+    if (error || !data?.session) return null;
+    return { accessToken: data.session.access_token, user: { id: data.user.id, email: data.user.email } };
   },
 
   // ── Batches (Phase E) ──
@@ -170,8 +196,49 @@ const db = {
     return unwrap(await requireClient().from('batches').update(fields).eq('id', batchId).select('*').maybeSingle());
   },
 
+  /**
+   * Updates a batch only while it still has `status`, so two servers (or a click and the scheduler)
+   * cannot both start or close it. @returns the updated batch, or null if the status had changed.
+   */
+  async updateBatchIfStatus(batchId, status, fields) {
+    return unwrap(await requireClient().from('batches').update(fields).eq('id', batchId).eq('status', status).select('*').maybeSingle());
+  },
+
+  /** Campaigns the scheduler must act on: drafts whose start time has come, live ones whose close time has. */
+  async listDueSchedules(nowIso) {
+    const client = requireClient();
+    const [starting, closing] = await Promise.all([
+      client.from('batches').select('*').eq('status', 'draft').not('scheduled_at', 'is', null).lte('scheduled_at', nowIso),
+      client.from('batches').select('*').eq('status', 'live').not('closes_at', 'is', null).lte('closes_at', nowIso)
+    ]);
+    return { starting: unwrap(starting) || [], closing: unwrap(closing) || [] };
+  },
+
   async deleteBatch(batchId) {
     unwrap(await requireClient().from('batches').delete().eq('id', batchId));
+  },
+
+  /**
+   * Removes a batch's resumes and recordings (resumes/<batch>/…, recordings/<batch>/…).
+   * Database cascades do not reach storage. @returns {Promise<number>} files removed
+   */
+  async removeBatchFiles(batchId) {
+    const storage = requireClient().storage;
+    let removed = 0;
+    for (const bucket of ['resumes', 'recordings']) {
+      // Listing pages hold at most 1000 names; removing them shrinks the folder, so list again from the start.
+      for (;;) {
+        const { data, error } = await storage.from(bucket).list(batchId, { limit: 1000 });
+        if (error) throw error;
+        const paths = (data || []).filter(f => f.name).map(f => `${batchId}/${f.name}`);
+        if (!paths.length) break;
+        const { error: removeError } = await storage.from(bucket).remove(paths);
+        if (removeError) throw removeError;
+        removed += paths.length;
+        if (paths.length < 1000) break;
+      }
+    }
+    return removed;
   },
 
   // ── HR questions (Phase E) ──
@@ -221,9 +288,19 @@ const db = {
   async listCandidates(batchId) {
     return unwrap(await requireClient()
       .from('candidates')
-      .select('id, batch_id, user_id, name, email, status, failure_reason, resume_path, created_at, updated_at')
+      .select('id, batch_id, user_id, name, email, status, failure_reason, resume_path, invite_email_sent_at, invite_email_error, created_at, updated_at')
       .eq('batch_id', batchId)
       .order('created_at'));
+  },
+
+  /** HR corrects a candidate's name or email (see PATCH /api/hr/candidates/:id). */
+  async updateCandidateDetails(candidateId, fields) {
+    unwrap(await requireClient().from('candidates').update(fields).eq('id', candidateId));
+  },
+
+  /** Records the outcome of an invite email ({ invite_email_sent_at?, invite_email_error }). */
+  async markInviteEmail(candidateId, fields) {
+    unwrap(await requireClient().from('candidates').update(fields).eq('id', candidateId));
   },
 
   async countCandidates(batchId) {

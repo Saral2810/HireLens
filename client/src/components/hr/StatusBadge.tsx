@@ -24,9 +24,10 @@ export const StatusBadge: React.FC<{ status: CandidateStatus }> = ({ status }) =
 
 export const CAMPAIGN_LABELS: Record<CampaignStatus, string> = { draft: 'Draft', live: 'Live', closed: 'Closed' };
 
-export const CampaignBadge: React.FC<{ status: CampaignStatus }> = ({ status }) => (
+/** scheduled: a draft with a start time ("Scheduled" instead of "Draft"). */
+export const CampaignBadge: React.FC<{ status: CampaignStatus; scheduled?: boolean }> = ({ status, scheduled }) => (
   <span className={`badge ${status === 'live' ? 'badge-solid badge-live' : status === 'closed' ? 'badge-dashed' : 'badge-faint'}`}>
-    {CAMPAIGN_LABELS[status]}
+    {status === 'draft' && scheduled ? 'Scheduled' : CAMPAIGN_LABELS[status]}
   </span>
 );
 

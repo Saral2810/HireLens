@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Building2, CalendarDays, FolderPlus, Plus } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { Building2, CalendarDays, Check, FolderPlus, Pencil, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../services/api';
 import { Batch, CampaignStatus } from '../../types';
 import { EmptyState, ErrorNote } from '../../components/ui/Modal';
 import { CampaignBadge } from '../../components/hr/StatusBadge';
+import { BatchFormModal } from '../../components/hr/BatchFormModal';
+import { DeleteCampaignModal, deletedNotice } from '../../components/hr/DeleteCampaignModal';
 
 export const formatDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -37,6 +39,10 @@ export const CampaignsPage: React.FC = () => {
   const [campaigns, setCampaigns] = useState<Batch[] | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
   const [error, setError] = useState<string | null>(null);
+  const location = useLocation();
+  const [notice, setNotice] = useState<string | null>((location.state as { notice?: string } | null)?.notice || null);
+  const [editing, setEditing] = useState<Batch | null>(null);
+  const [deleting, setDeleting] = useState<Batch | null>(null);
 
   useEffect(() => { api.listBatches().then(setCampaigns).catch(err => setError(err.message)); }, []);
 
@@ -60,6 +66,7 @@ export const CampaignsPage: React.FC = () => {
         <Link to="/hr/campaigns/new" className="btn btn-primary"><Plus size={16} /> New campaign</Link>
       </div>
       <ErrorNote message={error} />
+      {notice && <div className="alert" role="status"><Check size={15} /><span>{notice}</span></div>}
 
       {campaigns && campaigns.length > 0 && (
         <div className="tabs" role="tablist">
@@ -85,13 +92,14 @@ export const CampaignsPage: React.FC = () => {
       {shown.length > 0 && (
         <div className="grid-cards">
           {shown.map(b => (
-            <Link key={b.id} to={`/hr/campaigns/${b.id}`} className="card card-pad">
+            <div key={b.id} className="card card-pad" style={{ display: 'flex', flexDirection: 'column' }}>
+              <Link to={`/hr/campaigns/${b.id}`} style={{ color: 'inherit', textDecoration: 'none', flex: 1 }}>
               <div className="row" style={{ alignItems: 'flex-start' }}>
                 <div className="grow">
                   <h3 style={{ marginBottom: 4 }}>{b.name}</h3>
                   <div className="small" style={{ color: 'var(--text-2)' }}>{b.job_role}</div>
                 </div>
-                <CampaignBadge status={b.status || 'draft'} />
+                <CampaignBadge status={b.status || 'draft'} scheduled={!!b.scheduled_at} />
               </div>
               <div className="row-wrap tiny muted mt-sm mb" style={{ gap: 12 }}>
                 <span className="row" style={{ gap: 4 }}><CalendarDays size={13} /> {formatDate(b.batch_date)}</span>
@@ -99,9 +107,37 @@ export const CampaignsPage: React.FC = () => {
                 <span className="tag spacer">{b.counts?.total ?? 0} candidates</span>
               </div>
               <CampaignProgress batch={b} />
-            </Link>
+              </Link>
+              <div className="row mt-sm" style={{ justifyContent: 'flex-end', gap: 4 }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setEditing(b)} aria-label={`Edit ${b.name}`}><Pencil size={14} /> Edit</button>
+                <button className="btn btn-ghost btn-sm btn-danger" onClick={() => setDeleting(b)} aria-label={`Delete ${b.name}`}><Trash2 size={14} /> Delete</button>
+              </div>
+            </div>
           ))}
         </div>
+      )}
+
+      {editing && (
+        <BatchFormModal
+          batch={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(updated) => {
+            setCampaigns(list => (list || []).map(c => (c.id === updated.id ? { ...c, ...updated, counts: c.counts } : c)));
+            setEditing(null);
+            setNotice(`Saved "${updated.name}".`);
+          }}
+        />
+      )}
+      {deleting && (
+        <DeleteCampaignModal
+          batch={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={(result) => {
+            setCampaigns(list => (list || []).filter(c => c.id !== deleting.id));
+            setNotice(deletedNotice(deleting.name, result));
+            setDeleting(null);
+          }}
+        />
       )}
     </div>
   );

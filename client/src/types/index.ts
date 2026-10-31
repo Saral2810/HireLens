@@ -13,6 +13,8 @@ export interface BatchSummary {
   job_role: string;
   company_name: string | null;
   status?: CampaignStatus;
+  /** Languages candidates may pick for the call (mixed = English + Hindi). */
+  call_languages?: CallLanguage[];
 }
 
 export type AnswerType = 'text' | 'number' | 'yes_no' | 'ctc' | 'duration';
@@ -21,6 +23,12 @@ export type StatusCounts = Record<CandidateStatus, number> & { total: number };
 
 export interface Batch extends BatchSummary {
   job_description: string | null;
+  /** HR's short intro about the company; the agent turns it into a spoken briefing at the start of the call. */
+  company_intro?: string | null;
+  /** A draft starts by itself at this time and emails every candidate then. */
+  scheduled_at?: string | null;
+  /** A live campaign closes by itself at this time. */
+  closes_at?: string | null;
   created_by?: string | null;
   launched_at?: string | null;
   closed_at?: string | null;
@@ -45,12 +53,24 @@ export interface CandidateRow {
   email: string;
   status: CandidateStatus;
   failure_reason?: string | null;
+  /** When the invite email went out (null: not sent yet). */
+  invite_email_sent_at?: string | null;
+  /** Why the last invite email failed. */
+  invite_email_error?: string | null;
   created_at: string;
 }
 
 export interface BatchDetail extends Batch {
   questions: HrQuestion[];
   candidates: CandidateRow[];
+  /** Whether the server can send invite emails (SMTP set up in .env). */
+  email?: { configured: boolean };
+}
+
+/** Invite emails started by running a campaign or adding people to a live one. */
+export interface EmailQueueResult {
+  configured: boolean;
+  queued: number;
 }
 
 export interface InviteLinkResult {
@@ -105,6 +125,9 @@ export interface CallLine {
   audio_type: string;
 }
 
+/** Language of the screening call: mixed = English + Hindi (the default). */
+export type CallLanguage = 'mixed' | 'en' | 'hi';
+
 export interface CallStartResult {
   call_id: string;
   total_questions: number;
@@ -117,7 +140,7 @@ export interface CallTurnResult {
   position: number;
   lines: CallLine[];
   done: boolean;
-  outcome?: 'completed' | 'not_ready';
+  outcome?: 'completed' | 'not_ready' | 'not_ready_limit';
   heard: string;
   decision: 'next' | 'repeat' | 'skip';
   timings: { stt_ms: number; brain_ms: number; tts_ms: number; total_ms: number };
@@ -129,7 +152,7 @@ export type CallEndReason = 'ended_by_candidate' | 'left_page' | 'client_error';
 
 export interface ResultAnswer {
   position: number;
-  source: 'intro' | 'resume' | 'hr';
+  source: 'intro' | 'general' | 'resume' | 'hr';
   question_text: string;
   answer_type: AnswerType;
   outcome: 'answered' | 'skipped';
@@ -225,9 +248,3 @@ export interface StaffMember {
   is_you?: boolean;
 }
 
-export interface Screening {
-  id: string;
-  status: CandidateStatus;
-  created_at: string;
-  batch: { id: string; name: string; job_role: string; company_name: string | null; status: CampaignStatus };
-}

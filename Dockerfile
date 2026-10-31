@@ -43,7 +43,8 @@ RUN apk add --no-cache dumb-init curl
 
 # Default environment configuration
 ENV NODE_ENV=production \
-    PORT=3000
+    PORT=3000 \
+    HOST=0.0.0.0
 
 # Copy installed production dependencies from builder stage
 COPY --from=dependencies /app/node_modules ./node_modules

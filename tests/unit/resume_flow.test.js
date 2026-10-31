@@ -53,7 +53,7 @@ test('writeResumeQuestions falls back to general questions when needed', async (
   assert.equal(fallbackResumeQuestions('QA').length, 3);
 });
 
-test('buildQuestionPlan orders intro → resume → HR (by position) → closing', () => {
+test('buildQuestionPlan orders intro → project → problems → resume → experience check → HR (by position) → closing', () => {
   const plan = buildQuestionPlan({
     candidate: { name: 'Asha Rao', resume_questions: [{ question_text: 'R1?' }, { question_text: 'R2?', answer_type: 'text' }] },
     batch: { job_role: 'Backend Engineer', company_name: 'Demo Co' },
@@ -66,11 +66,16 @@ test('buildQuestionPlan orders intro → resume → HR (by position) → closing
   assert.match(plan.intro, /record/);
   assert.deepEqual(plan.questions.map(q => [q.position, q.source, q.question_text]), [
     [0, 'intro', 'Kya aap abhi baat karne ke liye ready hain?'],
-    [1, 'resume', 'R1?'],
-    [2, 'resume', 'R2?'],
-    [3, 'hr', 'Notice period?'],
-    [4, 'hr', 'Expected CTC?']
+    [1, 'general', 'Shuru karte hain aapke kaam se. Apne kisi ek project ke baare mein bataiye jis par aapko sabse zyada garv hai: aapne kya banaya, aur usme aapka role kya tha?'],
+    [2, 'general', 'Us project mein aapko sabse badi problem kya aayi, aur aapne use kaise solve kiya?'],
+    [3, 'resume', 'R1?'],
+    [4, 'resume', 'R2?'],
+    [5, 'general', 'Kya aapne pehle kisi company mein full-time job ki hai, ya aap fresher hain?'],
+    [6, 'hr', 'Notice period?'],
+    [7, 'hr', 'Expected CTC?']
   ]);
-  assert.equal(plan.questions[4].answer_type, 'ctc');
+  assert.deepEqual([plan.questions[1].probe, plan.questions[2].probe], [true, true]);
+  assert.deepEqual([plan.questions[5].experience_check, plan.questions[5].fresher_skip], [true, true]);
+  assert.equal(plan.questions[7].answer_type, 'ctc');
   assert.match(plan.closing, /Dhanyavaad Asha/);
 });

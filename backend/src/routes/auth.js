@@ -1,15 +1,14 @@
 import { Router } from 'express';
 import db, { createAuthClient } from '../config/db.js';
 import { requireAuth, getRole, isHr, ROLES } from '../middleware/auth.js';
+import { limits } from '../middleware/rateLimit.js';
+import { appUrl, createInviteSession } from '../services/candidateInvites.js';
+import { verifyInviteToken, emailTag, InviteTokenError } from '../services/inviteToken.js';
 
 const router = Router();
+// Sign-in answers carry session tokens: no browser or proxy may keep a copy.
+router.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/** Where Supabase sends people back after Google sign-in. PUBLIC_APP_URL wins; otherwise the address in use. */
-function appUrl(req) {
-  const configured = (process.env.PUBLIC_APP_URL || '').trim().replace(/\/+$/, '');
-  return configured || `${req.protocol}://${req.get('host')}`;
-}
 
 function notConfigured(res) {
   return res.status(503).json({ error: 'Auth not configured', message: 'Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.' });
@@ -20,10 +19,10 @@ function notConfigured(res) {
  * Checks the email/password with Supabase Auth and returns the session token and role.
  * Candidates sign in with Google or an email code instead.
  */
-router.post('/login', async (req, res) => {
+router.post('/login', limits.loginIp, limits.loginEmail, async (req, res) => {
   try {
     const { email, password } = req.body || {};
-    if (!email || !password) {
+    if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
 
@@ -66,19 +65,78 @@ async function googleEnabled() {
   return enabled;
 }
 
-/** GET /api/auth/google → { enabled, url }: the browser goes to url; Google sends it back signed in. */
+/** The OAuth client ID of Google's sign-in button (the same one set in Supabase → Auth → Google). */
+function googleClientId() {
+  const id = (process.env.GOOGLE_CLIENT_ID || '').trim();
+  return /^[\w.-]+\.apps\.googleusercontent\.com$/.test(id) ? id : '';
+}
+
+/**
+ * GET /api/auth/google → { enabled, client_id }
+ * Candidates sign in with Google's own button on this page (Google Identity Services), so the
+ * Supabase project address is never shown. Needs GOOGLE_CLIENT_ID and the Google provider on in Supabase.
+ */
 router.get('/google', async (req, res) => {
   if (!process.env.SUPABASE_URL) return notConfigured(res);
-  const enabled = await googleEnabled();
-  const url = `${process.env.SUPABASE_URL.replace(/\/+$/, '')}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(`${appUrl(req)}/auth/callback`)}`;
-  res.json({ enabled, url: enabled ? url : null });
+  const clientId = googleClientId();
+  const enabled = Boolean(clientId) && await googleEnabled();
+  res.json({ enabled, client_id: enabled ? clientId : null });
+});
+
+/** The email inside a Google ID token, read without checking it (only to refuse early; Supabase checks the token). */
+export function unverifiedGoogleEmail(idToken) {
+  try {
+    const payload = JSON.parse(Buffer.from(String(idToken).split('.')[1] || '', 'base64url').toString('utf8'));
+    return typeof payload?.email === 'string' ? payload.email.trim().toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * POST /api/auth/google/token { credential, nonce } → { token, user }
+ * credential = the ID token from Google's button; nonce = the random value whose SHA-256 the button
+ * was given (so a token taken from elsewhere cannot be replayed here). Only for emails HR added to a
+ * live campaign, and never for HR accounts; every refusal is the same 401.
+ */
+router.post('/google/token', limits.googleIp, async (req, res) => {
+  try {
+    const credential = req.body?.credential;
+    const nonce = req.body?.nonce;
+    if (typeof credential !== 'string' || credential.length > 4096 || credential.split('.').length !== 3
+      || typeof nonce !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(nonce)) {
+      return res.status(400).json({ error: 'Bad Request', message: 'Google sign-in did not complete. Please try again.' });
+    }
+    if (!googleClientId()) return res.status(503).json({ error: 'Not configured', message: 'Google sign-in is not set up. Use the email code.' });
+
+    // Every refusal looks the same, so a made-up token cannot be used to learn whether an email has
+    // a screening or belongs to HR (the email is read before the token is checked).
+    const refuse = () => res.status(401).json({
+      error: 'Unauthorized',
+      message: 'We could not sign you in with this Google account. Use the Google account of the email HR invited, or get a code by email.'
+    });
+    const email = unverifiedGoogleEmail(credential);
+    if (!email) return refuse();
+    const profile = await db.getProfileByEmail(email);
+    // HR accounts never sign in here; and only emails in a live campaign, so strangers get no account.
+    if (isHr(profile?.role) || !(await db.hasLiveScreening(email))) return refuse();
+
+    const session = await db.signInWithGoogleIdToken(credential, nonce);
+    // Supabase checked the signature, audience and nonce; the email it signed in must be the one checked above.
+    if (!session || session.user.email?.toLowerCase() !== email) return refuse();
+    await db.claimCandidatesByEmail(session.user.id, session.user.email);
+    res.json({ success: true, token: session.accessToken, user: { id: session.user.id, email: session.user.email, role: await getRole(session.user.id) } });
+  } catch (err) {
+    console.error('[POST /api/auth/google/token] Error:', err.message);
+    res.status(500).json({ error: 'Authentication service error.' });
+  }
 });
 
 /**
  * POST /api/auth/email-code { email } → sends a 6-digit sign-in code.
  * Only for emails HR has added to a live campaign, so random addresses cannot create accounts.
  */
-router.post('/email-code', async (req, res) => {
+router.post('/email-code', limits.codeIp, limits.codeEmail, async (req, res) => {
   try {
     const email = String(req.body?.email || '').trim().toLowerCase();
     if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Bad Request', message: 'Enter a valid email address.' });
@@ -93,7 +151,10 @@ router.post('/email-code', async (req, res) => {
       return res.status(404).json({ error: 'Not Found', message: 'No screening found for this email. Check with HR that they added this exact address and ran the campaign.' });
     }
 
-    const { error } = await authClient.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+    const { error } = await authClient.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: true, emailRedirectTo: `${appUrl(req)}/invite` }
+    });
     if (error) {
       const limited = error.status === 429 || /rate limit|security purposes/i.test(error.message);
       return res.status(limited ? 429 : 502).json({
@@ -109,7 +170,7 @@ router.post('/email-code', async (req, res) => {
 });
 
 /** POST /api/auth/email-code/verify { email, code } → { token, user } for the candidate. */
-router.post('/email-code/verify', async (req, res) => {
+router.post('/email-code/verify', limits.verifyIp, async (req, res) => {
   try {
     const email = String(req.body?.email || '').trim().toLowerCase();
     const code = String(req.body?.code || '').replace(/\s+/g, '');
@@ -128,6 +189,47 @@ router.post('/email-code/verify', async (req, res) => {
   } catch (err) {
     console.error('[POST /api/auth/email-code/verify] Error:', err);
     res.status(500).json({ error: 'Authentication service error.' });
+  }
+});
+
+/**
+ * POST /api/auth/join { token } → { token, user }
+ * The candidate opened their personal link (<app>/join?t=..., from the invite email or from HR).
+ * The invite token is checked and the candidate is signed in on the server, so the emailed link
+ * keeps working (a Supabase magic link in the email would expire in an hour or be used up by mail
+ * scanners) and the browser never goes to the Supabase address.
+ */
+router.post('/join', limits.joinIp, limits.joinToken, async (req, res) => {
+  try {
+    let candidateId;
+    let sentTo;
+    try {
+      ({ candidateId, emailTag: sentTo } = verifyInviteToken(req.body?.token));
+    } catch (err) {
+      if (!(err instanceof InviteTokenError)) throw err;
+      const status = err.reason === 'expired' ? 410 : err.reason === 'not_configured' ? 503 : 400;
+      return res.status(status).json({ error: 'Invalid link', message: err.message });
+    }
+    if (!db.isConfigured) return notConfigured(res);
+
+    const candidate = await db.getCandidate(candidateId);
+    if (!candidate) return res.status(404).json({ error: 'Not Found', message: 'This screening no longer exists. Please contact the HR team.' });
+    // HR changed the candidate's email after this link was sent: only the newest email's link works.
+    if (sentTo !== emailTag(candidate.email)) {
+      return res.status(410).json({ error: 'Invalid link', message: 'This invite link has been replaced. Use the newest invite email, or ask HR to send it again.' });
+    }
+    if (candidate.batch?.status !== 'live') {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: candidate.batch?.status === 'closed' ? 'This screening is closed. Please contact the HR team.' : 'This screening has not started yet. Please try again later.'
+      });
+    }
+    const session = await createInviteSession(candidate);
+    res.json({ success: true, token: session.accessToken, user: { id: session.user.id, email: session.user.email, role: await getRole(session.user.id) } });
+  } catch (err) {
+    if (err?.status === 409) return res.status(409).json({ error: 'Conflict', message: err.message });
+    console.error('[POST /api/auth/join] Error:', err);
+    res.status(500).json({ error: 'Server Error', message: 'Could not open the screening. Please try the link again in a minute.' });
   }
 });
 

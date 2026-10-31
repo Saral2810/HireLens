@@ -5,6 +5,8 @@ import { extractResumeText, MAX_RESUME_BYTES } from '../services/resumeParser.js
 import { writeResumeQuestions } from '../services/brain.js';
 import { expireStaleCall } from './call.js';
 import { retriesLeft } from '../services/callFlow.js';
+import { allowedLanguages } from '../services/callLanguage.js';
+import { limits } from '../middleware/rateLimit.js';
 
 /**
  * Candidate API. Mounted at /api/candidate behind requireAuth + requireRole('candidate').
@@ -38,18 +40,11 @@ function publicView(candidate, retries = 0) {
     has_resume: !!candidate.resume_path,
     batch: candidate.batch && {
       id: candidate.batch.id, name: candidate.batch.name, batch_date: candidate.batch.batch_date,
-      job_role: candidate.batch.job_role, company_name: candidate.batch.company_name, status: candidate.batch.status
+      job_role: candidate.batch.job_role, company_name: candidate.batch.company_name, status: candidate.batch.status,
+      call_languages: allowedLanguages(candidate.batch.call_languages)
     }
   };
 }
-
-/** GET /api/candidate/screenings → every screening of this candidate (dashboard history). */
-router.get('/screenings', async (req, res, next) => {
-  try {
-    await db.claimCandidatesByEmail(req.user.id, req.user.email);
-    res.json(await db.listScreeningsForUser(req.user.id));
-  } catch (err) { next(err); }
-});
 
 /** GET /api/candidate/me → own record, batch and progress (questions stay hidden until the call). */
 router.get('/me', async (req, res, next) => {
@@ -68,7 +63,7 @@ router.get('/me', async (req, res, next) => {
  * resume questions for the call and marks the candidate "resume_uploaded". Can be repeated
  * (replaces the resume) until the call starts.
  */
-router.post('/resume', upload.single('resume'), async (req, res, next) => {
+router.post('/resume', limits.resume, upload.single('resume'), async (req, res, next) => {
   try {
     const candidate = await loadOwnCandidate(req, res);
     if (!candidate) return;
@@ -86,7 +81,7 @@ router.post('/resume', upload.single('resume'), async (req, res, next) => {
     const path = `${candidate.batch_id}/${candidate.id}.pdf`;
     await db.uploadFile('resumes', path, req.file.buffer, 'application/pdf');
 
-    const { questions, source } = await writeResumeQuestions({
+    const { questions, isFresher, source } = await writeResumeQuestions({
       resumeText: resume.readable ? resume.text : '',
       jobRole: candidate.batch?.job_role,
       jobDescription: candidate.batch?.job_description
@@ -96,6 +91,8 @@ router.post('/resume', upload.single('resume'), async (req, res, next) => {
       resume_path: path,
       resume_text: resume.readable ? resume.text : null,
       resume_questions: questions,
+      // Read from the resume; a fresher is not asked notice period or current CTC.
+      is_fresher: isFresher,
       status: 'resume_uploaded'
     });
 

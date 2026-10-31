@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Mic, PhoneCall, PhoneOff, Volume2, Loader, Headphones } from 'lucide-react';
 import { api } from '../../services/api';
-import { CallEndReason, CallLine } from '../../types';
+import { CallEndReason, CallLanguage, CallLine, CallStartResult } from '../../types';
 import { WavRecorder } from '../../lib/wavRecorder';
 import { ErrorNote } from '../ui/Modal';
 
@@ -9,16 +9,24 @@ export type CallOutcome = 'completed' | 'not_ready' | 'ended' | 'error';
 
 interface Props {
   ready: boolean;
+  /** Languages this campaign allows (default: all three). */
+  languages?: CallLanguage[];
   onStart: () => void;
   onFinished: (outcome: CallOutcome, message?: string) => void;
 }
 
-type Phase = 'idle' | 'connecting' | 'speaking' | 'listening' | 'thinking' | 'saving';
+type Phase = 'idle' | 'connecting' | 'waiting' | 'speaking' | 'listening' | 'thinking' | 'saving';
 
 const PHASE_LABEL: Record<Phase, string> = {
-  idle: '', connecting: 'Connecting…', speaking: 'Assistant speaking…', listening: 'Your turn: answer, then pause',
+  idle: '', connecting: 'Connecting…', waiting: 'Waiting for a free line…', speaking: 'Assistant speaking…', listening: 'Your turn: answer, then pause',
   thinking: 'One moment…', saving: 'Saving your call…'
 };
+
+const LANGUAGES: { value: CallLanguage; label: string; hint: string }[] = [
+  { value: 'mixed', label: 'English + Hindi', hint: 'Answer in English, Hindi or a mix' },
+  { value: 'en', label: 'English', hint: 'The assistant speaks English' },
+  { value: 'hi', label: 'हिंदी (Hindi)', hint: 'The assistant speaks Hindi' }
+];
 
 // Opus in WebM (Chrome, Edge) or OGG (Firefox); Safari falls back to its default.
 const RECORDING_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg'];
@@ -36,12 +44,16 @@ class CallEnded extends Error {}
  * agent's lines, records each answer as WAV for Prisma, and records the whole call (mic + agent,
  * mixed) as WebM for HR. Answer recording starts only after the agent stops speaking, to avoid echo.
  */
-export const CallPanel: React.FC<Props> = ({ ready, onStart, onFinished }) => {
+export const CallPanel: React.FC<Props> = ({ ready, languages: allowed, onStart, onFinished }) => {
+  const options = LANGUAGES.filter(l => !allowed?.length || allowed.includes(l.value));
   const [phase, setPhase] = useState<Phase>('idle');
   const [caption, setCaption] = useState('');
   const [level, setLevel] = useState(0);
   const [progress, setProgress] = useState<{ position: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [language, setLanguage] = useState<CallLanguage>(() => (allowed?.length && !allowed.includes('mixed') ? allowed[0] : 'mixed'));
+  // True while the question itself plays, when the candidate may talk over it.
+  const [canInterrupt, setCanInterrupt] = useState(false);
 
   const recorder = useRef<WavRecorder | null>(null);
   const playing = useRef<AudioBufferSourceNode | null>(null);
@@ -102,48 +114,83 @@ export const CallPanel: React.FC<Props> = ({ ready, onStart, onFinished }) => {
       mediaRecorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
       mediaRecorder.start(1000);
 
-      const play = async (lines: CallLine[]) => {
-        for (const l of lines) {
+      /**
+       * Plays the agent's lines. With interruptible, the candidate may start answering while the last
+       * line (the question) is still playing: the voice stops and their answer is recorded at once.
+       * @returns true when the candidate talked over the question (barge-in)
+       */
+      const play = async (lines: CallLine[], interruptible = false): Promise<boolean> => {
+        let bargedIn = false;
+        for (const [i, l] of lines.entries()) {
           if (ended.current) throw new CallEnded();
           setPhase('speaking');
           setCaption(l.text);
           const buffer = await ctx.decodeAudioData(base64ToBuffer(l.audio_base64));
+          const isQuestion = interruptible && i === lines.length - 1;
+          setCanInterrupt(isQuestion);
           await new Promise<void>(resolve => {
             const src = ctx.createBufferSource();
             src.buffer = buffer;
             src.connect(ctx.destination);
             src.connect(mix);
-            src.onended = () => resolve();
+            let cancelWatch = () => {};
+            src.onended = () => { cancelWatch(); resolve(); };
             playing.current = src;
             src.start();
+            if (isQuestion) {
+              cancelWatch = rec.watchForSpeech({
+                onSpeech: () => {
+                  bargedIn = true;
+                  try { src.stop(); } catch { /* already stopped */ }
+                }
+              });
+            }
           });
           playing.current = null;
         }
+        setCanInterrupt(false);
         if (ended.current) throw new CallEnded();
+        return bargedIn;
       };
 
-      const start = await api.startCall();
+      // All lines busy (429): stay in the queue and try again, without asking the candidate to do anything.
+      let start: CallStartResult | null = null;
+      while (!start) {
+        try {
+          start = await api.startCall(language);
+        } catch (err: any) {
+          if (err?.status !== 429) throw err;
+          const wait = Math.max(5, Number(err.body?.retry_after_seconds) || 15) + Math.random() * 5;
+          setPhase('waiting');
+          setCaption('Many candidates are on a call right now. Please stay on this page: your call starts automatically.');
+          await new Promise(r => setTimeout(r, wait * 1000));
+          if (ended.current) throw new CallEnded();
+          setPhase('connecting');
+        }
+      }
       open.current = true;
       setProgress({ position: start.position, total: start.total_questions });
-      await play(start.lines);
+      let bargedIn = await play(start.lines, true);
 
       for (;;) {
         setPhase('listening');
-        const answer = await rec.record({ onLevel: setLevel });
+        const answer = await rec.record({ onLevel: setLevel, preroll: bargedIn });
         setLevel(0);
         if (ended.current) throw new CallEnded();
 
         setPhase('thinking');
-        const send = () => api.callTurn(answer.hadSpeech ? answer.wav : null);
-        // One retry: the server saves nothing until a turn has fully worked.
+        const turnId = crypto.randomUUID();
+        const send = () => api.callTurn(answer.hadSpeech ? answer.wav : null, turnId);
+        // One retry with the same turn id: the server saves nothing until a turn has fully worked, and
+        // if the first try did work (only its reply was lost) the server replays that reply.
         const turn = await send().catch(() => new Promise<void>(r => setTimeout(r, 1000)).then(send));
         if (ended.current) throw new CallEnded();
 
         setProgress(p => p && { ...p, position: turn.position });
         if (turn.done) open.current = false;
-        await play(turn.lines);
+        bargedIn = await play(turn.lines, !turn.done);
         if (turn.done) {
-          outcome = turn.outcome === 'not_ready' ? 'not_ready' : 'completed';
+          outcome = turn.outcome === 'not_ready' ? 'not_ready' : turn.outcome === 'completed' ? 'completed' : 'ended';
           break;
         }
       }
@@ -188,10 +235,24 @@ export const CallPanel: React.FC<Props> = ({ ready, onStart, onFinished }) => {
         {ready ? (
           <div className="alert alert-info" style={{ marginBottom: 0 }}>
             <Headphones size={15} />
-            <span>Wear headphones, sit somewhere quiet and keep this tab open. The assistant asks one question at a time: answer, pause for a moment, and it will continue. About 5 minutes.</span>
+            <span>Wear headphones, sit somewhere quiet and keep this tab open. The assistant asks one question at a time: answer, pause for a moment, and it will continue. About 7 minutes.</span>
           </div>
         ) : (
           <p className="muted">Complete steps 1 and 2 to start your call.</p>
+        )}
+        {ready && options.length > 1 && (
+          <fieldset className="stack-sm" style={{ border: 0, padding: 0, margin: 0 }}>
+            <legend className="strong small mb-sm">Call language</legend>
+            <div className="row-wrap" role="radiogroup" style={{ gap: 8 }}>
+              {options.map(l => (
+                <button key={l.value} type="button" role="radio" aria-checked={language === l.value} title={l.hint}
+                  className={`btn${language === l.value ? ' btn-primary' : ''}`} onClick={() => setLanguage(l.value)}>
+                  {l.label}
+                </button>
+              ))}
+            </div>
+            <span className="tiny muted">{LANGUAGES.find(l => l.value === language)?.hint}.</span>
+          </fieldset>
         )}
         <button className="btn btn-primary btn-lg" disabled={!ready} onClick={run} style={{ alignSelf: 'flex-start' }}>
           <PhoneCall size={17} /> Start call
@@ -219,6 +280,7 @@ export const CallPanel: React.FC<Props> = ({ ready, onStart, onFinished }) => {
       </div>
       <div className="call-status" aria-live="polite">{PHASE_LABEL[phase]}</div>
       <p className="caption" aria-live="polite">{caption ? `“${caption}”` : ''}</p>
+      {phase === 'speaking' && canInterrupt && <p className="tiny muted" style={{ textAlign: 'center', margin: '0 0 8px' }}>You can start answering any time; the assistant will stop and listen.</p>}
 
       <div className="meter" aria-label="Microphone level" style={{ opacity: phase === 'listening' ? 1 : 0.3 }}>
         <div style={{ width: `${Math.min(100, level * 600)}%` }} />

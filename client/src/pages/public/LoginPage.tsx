@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, LogIn, Mail } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
@@ -6,14 +6,9 @@ import { api } from '../../services/api';
 import { Brand, ThemeToggle } from '../../components/layout/AppHeader';
 import { CallPreview } from '../../components/public/CallPreview';
 import { ErrorNote, Field } from '../../components/ui/Modal';
+import { renderGoogleButton } from '../../lib/googleSignIn';
 
 type Who = 'hr' | 'candidate';
-
-const GoogleMark: React.FC = () => (
-  <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true">
-    <path fill="currentColor" d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z" />
-  </svg>
-);
 
 /** HR: email + password. */
 const HrSignIn: React.FC = () => {
@@ -63,23 +58,31 @@ const CandidateSignIn: React.FC = () => {
   const [busy, setBusy] = useState<'google' | 'send' | 'verify' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Google's own button is shown only when it is set up; it signs in on this site.
+  const [googleReady, setGoogleReady] = useState(false);
+  const googleBox = useRef<HTMLDivElement>(null);
 
-  const google = async () => {
-    setBusy('google');
-    setError(null);
-    try {
-      const { enabled, url } = await api.googleSignIn();
-      if (!enabled || !url) {
-        setError('Google sign-in is not set up yet. Use the email code below.');
-        setBusy(null);
-        return;
-      }
-      window.location.href = url;
-    } catch (err: any) {
-      setError(err.message);
-      setBusy(null);
-    }
-  };
+  useEffect(() => {
+    let cancelled = false;
+    api.googleSignIn()
+      .then(async ({ enabled, client_id }) => {
+        if (cancelled || !enabled || !client_id || !googleBox.current) return;
+        await renderGoogleButton(googleBox.current, client_id, async (credential, nonce) => {
+          setBusy('google');
+          setError(null);
+          try {
+            await api.googleToken(credential, nonce);
+            setCurrentUser(await api.getMe());
+          } catch (err: any) {
+            setError(err.message);
+            setBusy(null);
+          }
+        });
+        if (!cancelled) setGoogleReady(true);
+      })
+      .catch(() => { /* no Google button: the email code still works */ });
+    return () => { cancelled = true; };
+  }, [setCurrentUser]);
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,10 +115,9 @@ const CandidateSignIn: React.FC = () => {
   return (
     <div>
       <ErrorNote message={error} />
-      <button type="button" className="btn btn-block btn-lg google-btn" onClick={google} disabled={busy !== null}>
-        <GoogleMark /> {busy === 'google' ? 'Opening Google…' : 'Continue with Google'}
-      </button>
-      <div className="divider">or get a code by email</div>
+      <div ref={googleBox} style={{ display: googleReady ? 'flex' : 'none', justifyContent: 'center', minHeight: googleReady ? 44 : 0 }} aria-busy={busy === 'google'} />
+      {busy === 'google' && <p className="small muted" role="status" style={{ textAlign: 'center' }}>Signing you in…</p>}
+      {googleReady && <div className="divider">or get a code by email</div>}
 
       {!codeSent ? (
         <form onSubmit={send}>

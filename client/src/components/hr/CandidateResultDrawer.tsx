@@ -7,7 +7,7 @@ import { ScorePill, StatusBadge } from './StatusBadge';
 import { days, lpa } from './ResultsTable';
 
 const SOURCE_TITLES: Record<ResultAnswer['source'], string> = {
-  intro: 'Opening', resume: 'About their resume', hr: 'HR questions'
+  intro: 'Opening', general: 'Their projects and problems solved', resume: 'About their resume', hr: 'HR questions'
 };
 
 const time = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
@@ -31,7 +31,7 @@ export const CandidateResultDrawer: React.FC<{ callId: string; onClose: () => vo
   }, []);
 
   const expired = detail ? Date.now() - openedAt > detail.links_expire_in_seconds * 1000 : false;
-  const groups = (['intro', 'resume', 'hr'] as const)
+  const groups = (['intro', 'general', 'resume', 'hr'] as const)
     .map(source => ({ source, answers: detail?.answers.filter(a => a.source === source) || [] }))
     .filter(g => g.answers.length);
 

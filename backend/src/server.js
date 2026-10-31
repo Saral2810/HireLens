@@ -1,21 +1,28 @@
 import app from './app.js';
 import dotenv from 'dotenv';
+import { startScheduler, stopScheduler } from './services/campaignScheduler.js';
 
 dotenv.config();
 
 const PORT = process.env.PORT || 3000;
+// Only this computer by default: the public address comes through the tunnel (ngrok), which connects
+// locally. Set HOST=0.0.0.0 only where the server must be reached directly (Docker, a cloud host).
+const HOST = process.env.HOST || '127.0.0.1';
 
-const server = app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, HOST, () => {
   console.log(`==================================================`);
   console.log(` HR Screening backend running on port ${PORT}`);
   console.log(` Open http://localhost:${PORT}`);
   console.log(`==================================================`);
+  // Starts scheduled campaigns (and their invite emails) and closes campaigns at their close time.
+  startScheduler();
 });
 
 let isShuttingDown = false;
 export const gracefulShutdown = (signal) => {
   if (isShuttingDown) return;
   isShuttingDown = true;
+  stopScheduler();
   console.log(`\n[Server] Received ${signal}. Shutting down...`);
 
   server.close(() => {

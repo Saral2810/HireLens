@@ -2,6 +2,8 @@
 
 export const ANSWER_TYPES = ['text', 'number', 'yes_no', 'ctc', 'duration'];
 export const MAX_CANDIDATES_PER_BATCH = 100;
+// Same codes as services/callLanguage.js: mixed = English + Hindi, en = English, hi = Hindi.
+export const CALL_LANGUAGE_CODES = ['mixed', 'en', 'hi'];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -38,12 +40,18 @@ export function validateBatchInput(body = {}, { partial = false } = {}) {
     if (!isIsoDate(body.batch_date)) errors.push('Batch date must be a valid date (YYYY-MM-DD).');
     else value.batch_date = body.batch_date;
   }
-  for (const [key, label, max] of [['company_name', 'Company name', 120], ['job_description', 'Job description', 4000]]) {
+  for (const [key, label, max] of [['company_name', 'Company name', 120], ['company_intro', 'Company intro', 1500], ['job_description', 'Job description', 4000]]) {
     if (has(key)) {
       const v = typeof body[key] === 'string' ? body[key].trim() : '';
       if (v.length > max) errors.push(`${label} must be at most ${max} characters.`);
       else value[key] = v || null;
     }
+  }
+  if (has('call_languages')) {
+    const langs = body.call_languages;
+    if (!Array.isArray(langs) || !langs.length || !langs.every(l => CALL_LANGUAGE_CODES.includes(l))) {
+      errors.push(`Call languages must be a list of one or more of: ${CALL_LANGUAGE_CODES.join(', ')}.`);
+    } else value.call_languages = CALL_LANGUAGE_CODES.filter(l => langs.includes(l));
   }
   if (partial && Object.keys(value).length === 0 && errors.length === 0) errors.push('Nothing to update.');
   return { value, errors };

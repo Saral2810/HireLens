@@ -25,11 +25,14 @@ test('the call starts at the first question and counts attempts from the transcr
 });
 
 test('saved answers move the call forward, and the end of the plan returns null', () => {
-  const answers = [{ position: 0 }, { position: 1 }];
+  // intro, proud project, problems, 1 resume, experience check, 1 HR question
+  const last = plan.questions.length - 1;
+  assert.equal(last, 5);
+  const answers = plan.questions.slice(0, last).map(q => ({ position: q.position }));
   assert.equal(currentStep(plan, answers, []).question.source, 'hr');
-  assert.equal(currentStep(plan, [...answers, { position: 2 }], []), null);
+  assert.equal(currentStep(plan, [...answers, { position: last }], []), null);
   assert.equal(questionAfter(plan, 1).position, 2);
-  assert.equal(questionAfter(plan, 2), null);
+  assert.equal(questionAfter(plan, last), null);
 });
 
 test('a call goes stale only after 3 minutes without a saved line', () => {
@@ -50,7 +53,7 @@ test('"no" to the opening question means not ready; other answers do not', () =>
 });
 
 test('answer rows keep the accepted answer, or every attempt when skipped', () => {
-  const q = plan.questions[2];
+  const q = plan.questions.find(x => x.source === 'hr');
   const ok = answerRow(q, { action: 'next', extracted: { days: 60 } }, ['kya?', 'do mahine']);
   assert.deepEqual(
     [ok.answer_text, ok.extracted_value, ok.outcome, ok.attempts, ok.source, ok.answer_type],

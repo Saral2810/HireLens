@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Check, CheckCircle2, Clock, Info, Languages, LogOut, PhoneOff, RotateCcw, SearchX, Square } from 'lucide-react';
 import { api } from '../../services/api';
-import { CandidatePortal, Screening } from '../../types';
+import { CandidatePortal } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { StatusBadge } from '../../components/hr/StatusBadge';
 import { ResumeUpload } from '../../components/candidate/ResumeUpload';
@@ -44,7 +44,6 @@ export const CandidateHomePage: React.FC = () => {
   const [notice, setNotice] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [missing, setMissing] = useState<string | null>(null);
-  const [screenings, setScreenings] = useState<Screening[]>([]);
   const { currentUser, logout } = useAppStore();
 
   const load = useCallback(async () => {
@@ -55,7 +54,6 @@ export const CandidateHomePage: React.FC = () => {
       // Signed in, but HR has not added this email to a running campaign.
       if (/No screening found/i.test(err.message)) setMissing(err.message); else setError(err.message);
     }
-    api.screenings().then(setScreenings).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -122,7 +120,6 @@ export const CandidateHomePage: React.FC = () => {
   const finished = closed
     ? { icon: <Square size={20} />, title: 'This screening is closed', text: 'HR has closed this campaign, so new calls cannot start. Please contact the HR team if you still want to take it.' }
     : FINISHED[me.status];
-  const others = screenings.filter(s => s.id !== me.id);
   const step2Done = micOk && me.consent_given;
   const ready = me.has_resume && step2Done;
   const firstName = me.name.split(' ')[0];
@@ -183,21 +180,8 @@ export const CandidateHomePage: React.FC = () => {
           )}
 
           <Step n={3} title={inCall ? 'Screening call' : 'Take the call'} done={false} current={ready || inCall}>
-            <CallPanel ready={ready} onStart={() => { setNotice(null); setInCall(true); }} onFinished={callFinished} />
+            <CallPanel ready={ready} languages={me?.batch?.call_languages} onStart={() => { setNotice(null); setInCall(true); }} onFinished={callFinished} />
           </Step>
-        </div>
-      )}
-      {others.length > 0 && !inCall && (
-        <div className="card mt">
-          <div className="card-head"><h4>Your other screenings</h4></div>
-          <ul className="list">
-            {others.map(s => (
-              <li key={s.id} className="list-item" style={{ alignItems: 'center' }}>
-                <div className="grow"><div className="strong">{s.batch.job_role}</div><div className="tiny muted">{s.batch.company_name || s.batch.name}</div></div>
-                <StatusBadge status={s.status} />
-              </li>
-            ))}
-          </ul>
         </div>
       )}
       <p className="tiny muted mt" style={{ textAlign: 'center' }}>{batch?.name}</p>

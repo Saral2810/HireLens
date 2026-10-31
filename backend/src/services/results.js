@@ -10,9 +10,10 @@ export function pickCall(calls) {
   return newest.find(c => c.status === 'completed') || newest[0] || null;
 }
 
-/** An answer as HR reads it: "60 days", "12 LPA", "Yes", "Skipped", or the cleaned text. */
+/** An answer as HR reads it: "60 days", "12 LPA", "Yes", "Skipped", "Not asked (fresher)", or the cleaned text. */
 export function displayValue(answer) {
   if (!answer) return '';
+  if (answer.extracted_value?.not_asked === 'fresher') return 'Not asked (fresher)';
   if (answer.outcome === 'skipped') return answer.answer_text ? `Skipped (heard: ${answer.answer_text})` : 'Skipped';
   const v = answer.extracted_value || {};
   switch (answer.answer_type) {
@@ -25,16 +26,21 @@ export function displayValue(answer) {
   return (typeof v.text === 'string' && v.text) || answer.answer_text || '';
 }
 
+// How a CTC question is told apart: the wanted salary ("expected", "kitni chahte hain") or the one paid now.
+const EXPECTED_CTC = /expect|chahte|chahti|chahiye|want|desired|demand|अपेक्षित|चाहते|चाहिए/i;
+const CURRENT_CTC = /current|abhi|present|drawing|last|pichl|वर्तमान|अभी/i;
+
 /**
  * The headline numbers HR filters on. CTC questions are told apart by their wording
- * ("expected" vs "current"); without either word the first is current, the second expected.
+ * (expected vs current, in English or Hinglish); without either, the first is current, the second
+ * expected. A lone salary question about what the candidate wants is never shown as current (BUG-44).
  */
 export function keyFacts(answers) {
   const answered = (answers || []).filter(a => a.source === 'hr' && a.outcome === 'answered');
   const notice = answered.find(a => a.answer_type === 'duration' && typeof a.extracted_value?.days === 'number');
   const ctc = answered.filter(a => a.answer_type === 'ctc' && typeof a.extracted_value?.lpa === 'number');
-  let expected = ctc.find(a => /expect/i.test(a.question_text)) || null;
-  let current = ctc.find(a => a !== expected && /current|abhi|present/i.test(a.question_text)) || null;
+  let expected = ctc.find(a => EXPECTED_CTC.test(a.question_text)) || null;
+  let current = ctc.find(a => a !== expected && CURRENT_CTC.test(a.question_text)) || null;
   const rest = ctc.filter(a => a !== expected && a !== current);
   if (!current && rest.length) current = rest.shift();
   if (!expected && rest.length) expected = rest.shift();
@@ -103,11 +109,11 @@ export function exportTable(rows, hrQuestions) {
   const hr = [...(hrQuestions || [])].sort((a, b) => a.position - b.position).map(q => q.question_text);
   const headers = [
     'Name', 'Email', 'Status', 'Call date', 'Call length (min)', 'Notice period (days)', 'Current CTC (LPA)', 'Expected CTC (LPA)',
-    'Fit score', 'Summary', ...hr, 'Resume questions and answers', 'Failure reason'
+    'Fit score', 'Summary', ...hr, 'Project and resume questions and answers', 'Failure reason'
   ];
   const data = rows.map(r => {
     const byText = new Map(r.answers.filter(a => a.source === 'hr').map(a => [a.question_text.trim().toLowerCase(), a.display]));
-    const resume = r.answers.filter(a => a.source === 'resume').map((a, i) => `Q${i + 1}: ${a.question_text}\nA: ${a.display || '-'}`).join('\n\n');
+    const resume = r.answers.filter(a => a.source === 'general' || a.source === 'resume').map((a, i) => `Q${i + 1}: ${a.question_text}\nA: ${a.display || '-'}`).join('\n\n');
     return [
       r.name, r.email, r.status,
       r.call?.started_at ? r.call.started_at.slice(0, 10) : null,

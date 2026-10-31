@@ -2,11 +2,16 @@ import { Router } from 'express';
 import db from '../config/db.js';
 import multer from 'multer';
 import { ROLES, HR_ROLES, clearRoleCache } from '../middleware/auth.js';
+import { limits } from '../middleware/rateLimit.js';
 import { computeAnalytics } from '../services/analytics.js';
 import { cellText, parseCsvTable, rowsFromTable } from '../services/spreadsheet.js';
 import ExcelJS from 'exceljs';
 import { DEFAULT_HR_QUESTIONS } from '../services/questionTemplates.js';
 import { buildResultRows, exportTable, toCsv } from '../services/results.js';
+import { appUrl, createInviteLink, sendInviteEmail, queueInviteEmails } from '../services/candidateInvites.js';
+import { isMailConfigured } from '../services/mailer.js';
+import { prevoiceCampaign, prevoiceEnabled } from '../services/prevoice.js';
+import { validateSchedule } from '../services/campaignScheduler.js';
 import {
   validateBatchInput, validateQuestionInput, normalizeCandidateRows, MAX_CANDIDATES_PER_BATCH
 } from '../utils/validation.js';
@@ -15,6 +20,7 @@ import {
  * HR API. Mounted at /api/hr behind requireAuth + requireRole('superadmin', 'recruiter').
  * Admin (superadmin) reaches every campaign; a recruiter only their own (see canManage below).
  * Phase D: invite links. Phase E: batches, questions, candidates. Phase H: results, export, retakes.
+ * Invite emails: running a campaign (or adding people to a live one) emails each candidate a personal link.
  */
 const router = Router();
 
@@ -63,39 +69,6 @@ router.use('/calls/:id', guard(async id => {
   return c && db.getBatch(c.batch_id);
 }, 'Call'));
 
-/** Where invite links land. PUBLIC_APP_URL wins; otherwise the address HR is using. */
-function appUrl(req) {
-  const configured = (process.env.PUBLIC_APP_URL || '').trim().replace(/\/+$/, '');
-  return configured || `${req.protocol}://${req.get('host')}`;
-}
-
-/**
- * Creates (or reuses) the candidate's login and returns a one-time sign-in link.
- * No email is sent: contest candidates are made up and have no real inbox.
- */
-async function createInviteLink(candidate, req) {
-  // Never hand out a link that signs someone in as an HR account.
-  const existing = await db.getProfileByEmail(candidate.email);
-  if (existing?.role === ROLES.SUPERADMIN) {
-    const err = new Error('This email belongs to an HR account. Use a different candidate email.');
-    err.status = 409;
-    throw err;
-  }
-
-  // generateLink creates the auth user on first use; the profiles trigger makes it a candidate.
-  const { data, error } = await db.supabase.auth.admin.generateLink({
-    type: 'magiclink',
-    email: candidate.email,
-    options: { redirectTo: `${appUrl(req)}/invite`, data: { name: candidate.name } }
-  });
-  if (error) throw error;
-
-  if (candidate.user_id !== data.user.id) {
-    await db.linkCandidateUser(candidate.id, data.user.id);
-  }
-  return data.properties.action_link;
-}
-
 // ── Batches ───────────────────────────────────────────────────────────────
 
 router.get('/batches', async (req, res, next) => {
@@ -119,7 +92,7 @@ router.get('/batches/:id', async (req, res, next) => {
     const batch = await db.getBatch(req.params.id);
     if (!batch) return notFound(res, 'Batch');
     const [questions, candidates] = await Promise.all([db.listQuestions(batch.id), db.listCandidates(batch.id)]);
-    res.json({ ...batch, questions, candidates });
+    res.json({ ...batch, questions, candidates, email: { configured: isMailConfigured() } });
   } catch (err) { next(err); }
 });
 
@@ -133,17 +106,33 @@ router.patch('/batches/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-/** Deleting is allowed only before any candidate has started, so no screening data is lost. */
+/**
+ * DELETE /api/hr/batches/:id { confirm_name? } → { deleted, candidates, files_removed }
+ * Before anyone has started, a campaign is deleted straight away. Once candidates have resumes, calls
+ * or results, HR must type the campaign name (confirm_name), and the campaign must not be live, so
+ * nobody is mid-call. Questions, candidates, calls and answers go by cascade; resumes and recordings
+ * are removed from storage too.
+ */
 router.delete('/batches/:id', async (req, res, next) => {
   try {
     const batch = await db.getBatch(req.params.id);
     if (!batch) return notFound(res, 'Batch');
-    const started = (await db.listCandidates(batch.id)).filter(c => c.status !== 'invited');
+    const candidates = await db.listCandidates(batch.id);
+    const started = candidates.filter(c => c.status !== 'invited');
     if (started.length) {
-      return res.status(409).json({ error: 'Conflict', message: `${started.length} candidate(s) in this batch have already started. The batch cannot be deleted.` });
+      if (batch.status === 'live' || started.some(c => c.status === 'in_call')) {
+        return res.status(409).json({ error: 'Conflict', message: `${started.length} candidate(s) have already started. Close the campaign first, so nobody is in a call, then delete it.` });
+      }
+      if (String(req.body?.confirm_name ?? '').trim() !== batch.name) {
+        return res.status(400).json({
+          error: 'Bad Request', code: 'confirm_required', started: started.length,
+          message: `This deletes ${started.length} candidate(s)' resumes, recordings and results for good. Type the campaign name to confirm.`
+        });
+      }
     }
+    const filesRemoved = await db.removeBatchFiles(batch.id);
     await db.deleteBatch(batch.id);
-    res.status(204).end();
+    res.json({ deleted: true, candidates: candidates.length, files_removed: filesRemoved });
   } catch (err) { next(err); }
 });
 
@@ -222,7 +211,47 @@ router.post('/batches/:id/candidates', async (req, res, next) => {
     }
 
     const inserted = await db.addCandidates(req.params.id, valid);
-    res.status(201).json({ added: inserted.length, skipped_existing: valid.length - inserted.length, candidates: inserted });
+    // People added to a campaign that is already running get their invite email straight away.
+    const batch = await db.getBatch(req.params.id);
+    const emails = batch.status === 'live' ? queueInviteEmails(batch, inserted, appUrl(req)) : { configured: isMailConfigured(), queued: 0 };
+    res.status(201).json({
+      added: inserted.length, skipped_existing: valid.length - inserted.length, candidates: inserted,
+      emails: { configured: emails.configured, queued: emails.queued }
+    });
+  } catch (err) { next(err); }
+});
+
+/**
+ * PATCH /api/hr/candidates/:id { name?, email? } → the updated row.
+ * The name can be corrected any time. The email only before the candidate has started; a new email
+ * clears the old sign-in link and, if the campaign is live, the invite goes to the new address.
+ */
+router.patch('/candidates/:id', async (req, res, next) => {
+  try {
+    const candidate = await db.getCandidate(req.params.id);
+    if (!candidate) return notFound(res, 'Candidate');
+    const { valid, errors } = normalizeCandidateRows([{ name: req.body?.name ?? candidate.name, email: req.body?.email ?? candidate.email }]);
+    if (errors.length) return badRequest(res, errors.map(e => e.message));
+    const { name, email } = valid[0];
+    const emailChanged = email !== candidate.email;
+    if (!emailChanged && name === candidate.name) return badRequest(res, ['Nothing to update.']);
+
+    const fields = { name };
+    if (emailChanged) {
+      if (candidate.status !== 'invited') {
+        return res.status(409).json({ error: 'Conflict', message: 'This candidate has already started, so the email can no longer be changed.' });
+      }
+      if ((await db.listCandidates(candidate.batch_id)).some(c => c.id !== candidate.id && c.email === email)) {
+        return res.status(409).json({ error: 'Conflict', message: `${email} is already in this campaign.` });
+      }
+      Object.assign(fields, { email, user_id: null, invite_email_sent_at: null, invite_email_error: null });
+    }
+    await db.updateCandidateDetails(candidate.id, fields);
+    const updated = (await db.listCandidates(candidate.batch_id)).find(c => c.id === candidate.id);
+    const emails = emailChanged && candidate.batch?.status === 'live'
+      ? queueInviteEmails(candidate.batch, [updated], appUrl(req))
+      : { configured: isMailConfigured(), queued: 0 };
+    res.json({ ...updated, emails: { configured: emails.configured, queued: emails.queued } });
   } catch (err) { next(err); }
 });
 
@@ -240,16 +269,31 @@ router.delete('/candidates/:id', async (req, res, next) => {
 });
 
 /** POST /api/hr/candidates/:id/invite-link → one-time sign-in link for one candidate. */
+/**
+ * BUG-01: a copied sign-in link signs in as whoever owns that email address, for every screening they
+ * have. So HR may copy one only for a person whose screenings are all in campaigns this HR user
+ * manages. Otherwise "Send email" still works: that link goes only to the person's own inbox.
+ */
+async function refuseForeignScreenings(user, candidate) {
+  const rows = await db.listCandidatesByEmail(candidate.email);
+  if (rows.some(r => r.id !== candidate.id && !canManage(user, r.batch))) {
+    const err = new Error('This person also has a screening in another recruiter\'s campaign, so a copied sign-in link is not allowed. Use "Send email" instead: that link goes only to their own inbox.');
+    err.status = 409;
+    throw err;
+  }
+}
+
 router.post('/candidates/:id/invite-link', async (req, res, next) => {
   try {
     const candidate = await db.getCandidate(req.params.id);
     if (!candidate) return notFound(res, 'Candidate');
-    const inviteLink = await createInviteLink(candidate, req);
+    await refuseForeignScreenings(req.user, candidate);
+    const inviteLink = await createInviteLink(candidate, appUrl(req));
     res.json({
       candidate_id: candidate.id,
       email: candidate.email,
       invite_link: inviteLink,
-      note: 'Works once. Generate a new link if it has been used or has expired.'
+      note: `The candidate's personal link (the same as in their invite email). It works until it expires after ${process.env.INVITE_LINK_DAYS || 30} days.`
     });
   } catch (err) { next(err); }
 });
@@ -268,12 +312,34 @@ router.post('/batches/:id/invite-links', async (req, res, next) => {
     const links = [];
     for (const candidate of candidates) {
       try {
-        links.push({ candidate_id: candidate.id, name: candidate.name, email: candidate.email, invite_link: await createInviteLink(candidate, req) });
+        await refuseForeignScreenings(req.user, candidate);
+        links.push({ candidate_id: candidate.id, name: candidate.name, email: candidate.email, invite_link: await createInviteLink(candidate, appUrl(req)) });
       } catch (err) {
         links.push({ candidate_id: candidate.id, name: candidate.name, email: candidate.email, error: err.message });
       }
     }
-    res.json({ links, note: 'Each link works once. Generate new links for anyone whose link has been used or has expired.' });
+    res.json({ links, note: 'Personal links (the same as in the invite emails). Each works until it expires.' });
+  } catch (err) { next(err); }
+});
+
+/**
+ * POST /api/hr/candidates/:id/send-invite → emails this candidate their personal link now
+ * (first time, or again if it failed or they lost it). Only while the campaign is live.
+ */
+router.post('/candidates/:id/send-invite', limits.sendInvite, async (req, res, next) => {
+  try {
+    const candidate = await db.getCandidate(req.params.id);
+    if (!candidate) return notFound(res, 'Candidate');
+    if (!isMailConfigured()) {
+      return res.status(503).json({ error: 'Email not configured', message: 'Email is not set up. Add SMTP_HOST, SMTP_USER, SMTP_PASS and MAIL_FROM to .env, then restart the app.' });
+    }
+    if (candidate.batch?.status !== 'live') {
+      return res.status(409).json({ error: 'Conflict', message: 'Run the campaign first. Invites are emailed only while it is live.' });
+    }
+    if (candidate.status === 'completed') return res.status(409).json({ error: 'Conflict', message: 'This candidate has already finished the screening.' });
+    const result = await sendInviteEmail(candidate, candidate.batch, appUrl(req));
+    if (!result.sent) return res.status(502).json({ error: 'Email failed', message: result.error });
+    res.json({ candidate_id: candidate.id, sent: true });
   } catch (err) { next(err); }
 });
 
@@ -367,20 +433,62 @@ router.get('/batches/:id/export', async (req, res, next) => {
 
 // ── Campaign lifecycle (UI rebuild) ───────────────────────────────────────
 
-/** POST /api/hr/batches/:id/run → campaign live: candidates can sign in and take the call. */
+/** POST /api/hr/batches/:id/run → campaign live, and every candidate not emailed yet gets their invite email. */
 router.post('/batches/:id/run', async (req, res, next) => {
   try {
-    const batch = await db.getBatch(req.params.id);
-    if (batch.status === 'live') return res.json(batch);
-    if (!(await db.countCandidates(batch.id))) return badRequest(res, ['Add at least one candidate before running the campaign.']);
-    res.json(await db.updateBatch(batch.id, { status: 'live', launched_at: batch.launched_at || new Date().toISOString(), closed_at: null }));
+    let batch = await db.getBatch(req.params.id);
+    if (batch.status !== 'live') {
+      if (!(await db.countCandidates(batch.id))) return badRequest(res, ['Add at least one candidate before running the campaign.']);
+      // Running now replaces any start time set earlier; a close time already past is dropped.
+      const closesAt = batch.closes_at && Date.parse(batch.closes_at) > Date.now() ? batch.closes_at : null;
+      batch = await db.updateBatch(batch.id, { status: 'live', launched_at: batch.launched_at || new Date().toISOString(), closed_at: null, scheduled_at: null, closes_at: closesAt });
+    }
+    // Everyone not emailed yet gets their invite (running again only reaches people who never got one).
+    const emails = queueInviteEmails(batch, await db.listCandidates(batch.id), appUrl(req));
+    // Voice the lines every call shares (HR questions, briefing) in the background.
+    if (prevoiceEnabled()) {
+      const live = batch;
+      db.listQuestions(live.id)
+        .then(questions => prevoiceCampaign(live, questions))
+        .then(r => { if (r.failed) console.warn(`[Campaign ${live.id}] Pre-voicing: ${r.voiced} lines ready, ${r.failed} failed.`); })
+        .catch(err => console.warn(`[Campaign ${live.id}] Pre-voicing failed: ${err.message}`));
+    }
+    res.json({ ...batch, emails: { configured: emails.configured, queued: emails.queued } });
   } catch (err) { next(err); }
 });
 
 /** POST /api/hr/batches/:id/close → no new calls can start; finished results stay. */
 router.post('/batches/:id/close', async (req, res, next) => {
   try {
-    res.json(await db.updateBatch(req.params.id, { status: 'closed', closed_at: new Date().toISOString() }));
+    res.json(await db.updateBatch(req.params.id, { status: 'closed', closed_at: new Date().toISOString(), scheduled_at: null, closes_at: null }));
+  } catch (err) { next(err); }
+});
+
+/**
+ * POST /api/hr/batches/:id/schedule { start_at, close_at? } → the campaign
+ * A draft campaign starts by itself at start_at: it goes live and every candidate is emailed their
+ * invite then. close_at (optional) closes it by itself later. For a live campaign only close_at is set.
+ */
+router.post('/batches/:id/schedule', async (req, res, next) => {
+  try {
+    const batch = await db.getBatch(req.params.id);
+    const { value, errors } = validateSchedule(req.body || {}, batch);
+    if (errors.length) return badRequest(res, errors);
+    if (batch.status === 'draft' && !(await db.countCandidates(batch.id))) {
+      return badRequest(res, ['Add at least one candidate before scheduling the campaign.']);
+    }
+    // Status-checked: a campaign that started (or closed) in the meantime is not changed.
+    const updated = await db.updateBatchIfStatus(batch.id, batch.status, value);
+    if (!updated) return res.status(409).json({ error: 'Conflict', message: 'The campaign changed in the meantime. Reload the page.' });
+    res.json(updated);
+  } catch (err) { next(err); }
+});
+
+/** DELETE /api/hr/batches/:id/schedule → removes the start and close times (the campaign stays as it is). */
+router.delete('/batches/:id/schedule', async (req, res, next) => {
+  try {
+    const batch = await db.getBatch(req.params.id);
+    res.json(await db.updateBatch(batch.id, { scheduled_at: null, closes_at: null }));
   } catch (err) { next(err); }
 });
 
@@ -441,7 +549,7 @@ router.get('/team', adminOnly, async (req, res, next) => {
 });
 
 /** POST /api/hr/team { name, email, password, role } → creates an HR account (signs in with this password). */
-router.post('/team', adminOnly, async (req, res, next) => {
+router.post('/team', adminOnly, limits.teamCreate, async (req, res, next) => {
   try {
     const name = String(req.body?.name || '').trim();
     const email = String(req.body?.email || '').trim().toLowerCase();
