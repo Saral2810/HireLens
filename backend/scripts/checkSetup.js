@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
 import { createInviteToken } from '../src/services/inviteToken.js';
 import { buildInviteEmail } from '../src/services/inviteEmail.js';
+import { mailProvider, missingMailSettings, sendMail } from '../src/services/mailer.js';
 
 dotenv.config();
 
@@ -33,14 +34,23 @@ else {
 }
 console.log(`  • Supabase cannot be checked from here. In Supabase → Authentication → URL Configuration,\n    "Redirect URLs" must contain ${url ? `${url}/**` : 'https://your-name.ngrok-free.app/**'}`);
 
-console.log('\n2. Email (SMTP)');
+const provider = mailProvider();
+console.log(`\n2. Email (${provider === 'smtp' ? 'SMTP' : `${provider} API`})`);
 const smtp = {
   host: (process.env.SMTP_HOST || '').trim(), port: Number(process.env.SMTP_PORT || 465),
   user: (process.env.SMTP_USER || '').trim(), pass: process.env.SMTP_PASS || '', from: (process.env.MAIL_FROM || process.env.SMTP_USER || '').trim()
 };
 const missing = ['host', 'user', 'pass', 'from'].filter(k => !smtp[k]);
 let transport = null;
-if (missing.length) bad(`Missing in .env: ${missing.map(k => (k === 'from' ? 'MAIL_FROM' : `SMTP_${k.toUpperCase()}`)).join(', ')}`, 'See the "Invite emails" block in .env.example.');
+if (provider !== 'smtp') {
+  // Email APIs have no login to test without sending; --send-test below sends a real one.
+  const need = missingMailSettings();
+  if (need.length) bad(`Missing in .env: ${need.join(', ')}`, 'See the "Invite emails" block in .env.example.');
+  else {
+    ok(`Using the ${provider} API. Emails will come from: ${smtp.from}`);
+    transport = { sendMail, close() {} };
+  }
+} else if (missing.length) bad(`Missing in .env: ${missing.map(k => (k === 'from' ? 'MAIL_FROM' : `SMTP_${k.toUpperCase()}`)).join(', ')}`, 'See the "Invite emails" block in .env.example.');
 else {
   transport = nodemailer.createTransport({
     host: smtp.host, port: smtp.port, secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : smtp.port === 465,

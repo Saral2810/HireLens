@@ -9,7 +9,7 @@ import ExcelJS from 'exceljs';
 import { DEFAULT_HR_QUESTIONS } from '../services/questionTemplates.js';
 import { buildResultRows, exportTable, toCsv } from '../services/results.js';
 import { appUrl, createInviteLink, sendInviteEmail, queueInviteEmails } from '../services/candidateInvites.js';
-import { isMailConfigured } from '../services/mailer.js';
+import { isMailConfigured, missingMailSettings } from '../services/mailer.js';
 import { prevoiceCampaign, prevoiceEnabled } from '../services/prevoice.js';
 import { validateSchedule } from '../services/campaignScheduler.js';
 import {
@@ -331,7 +331,7 @@ router.post('/candidates/:id/send-invite', limits.sendInvite, async (req, res, n
     const candidate = await db.getCandidate(req.params.id);
     if (!candidate) return notFound(res, 'Candidate');
     if (!isMailConfigured()) {
-      return res.status(503).json({ error: 'Email not configured', message: 'Email is not set up. Add SMTP_HOST, SMTP_USER, SMTP_PASS and MAIL_FROM to .env, then restart the app.' });
+      return res.status(503).json({ error: 'Email not configured', message: `Email is not set up. Add ${missingMailSettings().join(', ')} to .env (or the host's environment settings), then restart the app.` });
     }
     if (candidate.batch?.status !== 'live') {
       return res.status(409).json({ error: 'Conflict', message: 'Run the campaign first. Invites are emailed only while it is live.' });

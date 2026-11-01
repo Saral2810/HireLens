@@ -12,7 +12,7 @@ import { installNetworkGuard } from './helpers/network.js';
 
 process.env.NODE_ENV = 'test';
 
-for (const key of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'MAIL_FROM', 'MAIL_REPLY_TO']) {
+for (const key of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'MAIL_FROM', 'MAIL_REPLY_TO', 'MAIL_PROVIDER', 'BREVO_API_KEY', 'RESEND_API_KEY']) {
   process.env[key] = '';
 }
 

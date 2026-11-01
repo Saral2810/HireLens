@@ -8,7 +8,7 @@ import { net, resetNetwork } from '../helpers/network.js';
 import { speechRetry, clearAudioCache } from '../../../backend/src/services/gnaniSpeech.js';
 import { runningInviteJobs } from '../../../backend/src/services/candidateInvites.js';
 import { createInviteToken } from '../../../backend/src/services/inviteToken.js';
-import { useTestTransport } from '../../../backend/src/services/mailer.js';
+import { useTestTransport, useTestFetch } from '../../../backend/src/services/mailer.js';
 import { startApp, tokens, takeCall } from '../helpers/http.js';
 
 let app, store, c, mail;
@@ -230,4 +230,81 @@ test('nothing in the email flow calls a real outside service', async () => {
   await settle();
   await join(tokenOf(mail.sent[0].link));
   assert.deepEqual(net.refused, []);
+});
+
+// ── Brevo (email over HTTPS, for hosts that block SMTP such as Render's free plan) ──
+
+/** Runs fn with BREVO_API_KEY set and a fake Brevo API; `fail(to)` → HTTP status to answer instead of 201. */
+async function withFakeBrevo(fail, fn) {
+  const calls = [];
+  const saved = { BREVO_API_KEY: process.env.BREVO_API_KEY, MAIL_FROM: process.env.MAIL_FROM, MAIL_REPLY_TO: process.env.MAIL_REPLY_TO };
+  Object.assign(process.env, { BREVO_API_KEY: 'qa-brevo-key', MAIL_FROM: 'HR Screening <hr@qa.test>', MAIL_REPLY_TO: 'hr@qa.test' });
+  useTestTransport(null);
+  useTestFetch(async (url, init) => {
+    const body = JSON.parse(init.body);
+    calls.push({ url, key: init.headers['api-key'], body });
+    const status = fail?.(body.to[0].email);
+    return status
+      ? new Response(JSON.stringify({ code: 'unauthorized', message: 'Key not found' }), { status })
+      : new Response(JSON.stringify({ messageId: `<brevo-${calls.length}@qa>` }), { status: 201 });
+  });
+  try { return await fn(calls); } finally { useTestFetch(null); Object.assign(process.env, saved); }
+}
+
+const linkIn = (text) => String(text).match(/https?:\/\/\S+\/join\?t=\S+/)?.[0];
+
+test('Brevo: running a campaign emails every candidate through the Brevo API, and the links sign them in', async () => {
+  await withFakeBrevo(null, async (calls) => {
+    const batch = await campaign();
+    const run = await c.post(`/api/hr/batches/${batch.id}/run`, { token: admin });
+    assert.deepEqual(run.body.emails, { configured: true, queued: 3 });
+    await settle();
+
+    assert.equal(calls.length, 3);
+    assert.ok(calls.every(x => x.url === 'https://api.brevo.com/v3/smtp/email' && x.key === 'qa-brevo-key'));
+    assert.deepEqual(calls.map(x => x.body.to[0].email).sort(), ['p1@qa.test', 'p2@qa.test', 'p3@qa.test']);
+    for (const { body } of calls) {
+      assert.deepEqual(body.sender, { name: 'HR Screening', email: 'hr@qa.test' });
+      assert.deepEqual(body.replyTo, { email: 'hr@qa.test' });
+      assert.match(body.subject, /Backend Engineer at QA Demo Co/);
+      assert.match(body.htmlContent, /Start my screening/);
+      const link = linkIn(body.textContent);
+      assert.match(link, /^http:\/\/qa\.localhost\/join\?t=/, 'the text body carries the personal link');
+      assert.ok(body.htmlContent.includes(tokenOf(link)), 'the button carries the same link');
+    }
+    assert.ok(store.candidates.every(x => x.invite_email_sent_at && !x.invite_email_error));
+
+    const joined = await join(tokenOf(linkIn(calls[0].body.textContent)));
+    assert.equal(joined.status, 200, 'the emailed link signs the candidate in');
+  });
+});
+
+test('Brevo: a refused key is recorded on the candidate in plain words and resending reports it', async () => {
+  await withFakeBrevo((to) => (to === 'p2@qa.test' ? 401 : null), async (calls) => {
+    const batch = await campaign();
+    await c.post(`/api/hr/batches/${batch.id}/run`, { token: admin });
+    await settle();
+    const bad = store.candidates.find(x => x.email === 'p2@qa.test');
+    assert.match(bad.invite_email_error, /BREVO_API_KEY/);
+    assert.ok(!bad.invite_email_sent_at);
+    assert.equal(store.candidates.filter(x => x.invite_email_sent_at).length, 2, 'the others still get their email');
+
+    const again = await c.post(`/api/hr/candidates/${bad.id}/send-invite`, { token: admin });
+    assert.equal(again.status, 502);
+    assert.match(again.body.message, /verified sender/);
+    assert.equal(calls.length, 4);
+  });
+});
+
+test('Brevo: with MAIL_FROM missing the app says exactly what to add', async () => {
+  await withFakeBrevo(null, async (calls) => {
+    process.env.MAIL_FROM = '';
+    const batch = await campaign();
+    const cand = store.candidates[0];
+    await c.post(`/api/hr/batches/${batch.id}/run`, { token: admin });
+    const res = await c.post(`/api/hr/candidates/${cand.id}/send-invite`, { token: admin });
+    assert.equal(res.status, 503);
+    assert.match(res.body.message, /MAIL_FROM/);
+    assert.equal(calls.length, 0);
+  });
 });

@@ -3,7 +3,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createInviteToken, verifyInviteToken, emailTag, InviteTokenError, inviteLinkDays } from '../../../backend/src/services/inviteToken.js';
 import { buildInviteEmail } from '../../../backend/src/services/inviteEmail.js';
-import { sendMail, isMailConfigured, MailError, useTestTransport } from '../../../backend/src/services/mailer.js';
+import { sendMail, isMailConfigured, MailError, useTestTransport, useTestFetch, mailProvider, missingMailSettings } from '../../../backend/src/services/mailer.js';
 import { queueInviteEmails } from '../../../backend/src/services/candidateInvites.js';
 import { installFakeDb } from '../helpers/fakeDb.js';
 import { installFakeMail } from '../helpers/mail.js';
@@ -120,6 +120,71 @@ test('mailer: a refused login is explained in plain words (Gmail App Password)',
 test('mailer: other server errors are shortened, not passed through whole', async () => {
   installFakeMail({ fail: () => new Error(`421 Try again later ${'x'.repeat(500)}`) });
   await assert.rejects(sendMail({ to: 'a@x.co', subject: 's', text: 't', html: 'h' }), (e) => e.message.length < 260 && /421/.test(e.message));
+});
+
+// Email APIs: under tests the mailer sends only through a fake fetch (useTestFetch).
+const withFakeFetch = async (reply, fn) => {
+  const calls = [];
+  useTestFetch(async (url, init) => {
+    calls.push({ url, headers: init.headers, body: JSON.parse(init.body) });
+    return new Response(JSON.stringify(reply.body), { status: reply.status });
+  });
+  try { await fn(calls); } finally { useTestFetch(null); }
+};
+const MSG = { to: 'asha@qa.test', subject: 'Invite', text: 't', html: '<p>h</p>' };
+
+test('mailer: provider is smtp by default, the API whose key is set, or MAIL_PROVIDER', async () => {
+  assert.equal(mailProvider(), 'smtp');
+  await withEnv({ BREVO_API_KEY: 'k' }, () => assert.equal(mailProvider(), 'brevo'));
+  await withEnv({ RESEND_API_KEY: 'k' }, () => assert.equal(mailProvider(), 'resend'));
+  await withEnv({ BREVO_API_KEY: 'k', MAIL_PROVIDER: 'smtp' }, () => assert.equal(mailProvider(), 'smtp'));
+  await withEnv({ BREVO_API_KEY: '' }, () => assert.deepEqual(missingMailSettings(), ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'MAIL_FROM']));
+  await withEnv({ MAIL_PROVIDER: 'brevo', MAIL_FROM: 'me@gmail.com' }, () => {
+    assert.deepEqual(missingMailSettings(), ['BREVO_API_KEY']);
+    assert.equal(isMailConfigured(), false);
+  });
+});
+
+test('mailer: Brevo gets the sender name, address, reply-to and both bodies over HTTPS', async () => {
+  await withEnv({ BREVO_API_KEY: 'brevo-key', MAIL_FROM: '"Saral (Hiring)" <me@gmail.com>', MAIL_REPLY_TO: 'hr@gmail.com' }, () =>
+    withFakeFetch({ status: 201, body: { messageId: '<b-1@brevo>' } }, async (calls) => {
+      assert.deepEqual(await sendMail(MSG), { messageId: '<b-1@brevo>' });
+      assert.equal(calls[0].url, 'https://api.brevo.com/v3/smtp/email');
+      assert.equal(calls[0].headers['api-key'], 'brevo-key');
+      assert.deepEqual(calls[0].body, {
+        sender: { name: 'Saral (Hiring)', email: 'me@gmail.com' }, to: [{ email: 'asha@qa.test' }], subject: 'Invite',
+        textContent: 't', htmlContent: '<p>h</p>', replyTo: { email: 'hr@gmail.com' }
+      });
+    }));
+});
+
+test('mailer: Resend gets the From line as written', async () => {
+  await withEnv({ RESEND_API_KEY: 'resend-key', MAIL_FROM: 'Hiring <jobs@acme.in>', MAIL_REPLY_TO: '' }, () =>
+    withFakeFetch({ status: 200, body: { id: 'r-1' } }, async (calls) => {
+      assert.deepEqual(await sendMail(MSG), { messageId: 'r-1' });
+      assert.equal(calls[0].url, 'https://api.resend.com/emails');
+      assert.equal(calls[0].headers.Authorization, 'Bearer resend-key');
+      assert.deepEqual(calls[0].body, { from: 'Hiring <jobs@acme.in>', to: ['asha@qa.test'], subject: 'Invite', text: 't', html: '<p>h</p>' });
+    }));
+});
+
+test('mailer: a refused API key or unverified sender is explained in plain words', async () => {
+  await withEnv({ BREVO_API_KEY: 'bad', MAIL_FROM: 'me@gmail.com' }, () =>
+    withFakeFetch({ status: 401, body: { code: 'unauthorized', message: 'Key not found' } }, () =>
+      assert.rejects(sendMail(MSG), (e) => e instanceof MailError && /BREVO_API_KEY/.test(e.message) && /verified sender/.test(e.message))));
+  await withEnv({ BREVO_API_KEY: 'k', MAIL_FROM: 'me@gmail.com' }, () =>
+    withFakeFetch({ status: 400, body: { code: 'invalid_parameter', message: 'email is not valid' } }, () =>
+      assert.rejects(sendMail(MSG), /brevo answered 400: email is not valid/)));
+});
+
+test('mailer: an email API key alone still sends nothing under tests without a fake fetch', async () => {
+  await withEnv({ BREVO_API_KEY: 'k', MAIL_FROM: 'me@gmail.com' }, () =>
+    assert.rejects(sendMail(MSG), /disabled while tests run/));
+});
+
+test('mailer: an SMTP connection timeout points at the email API', async () => {
+  installFakeMail({ fail: () => Object.assign(new Error('Connection timeout'), { code: 'ETIMEDOUT' }) });
+  await assert.rejects(sendMail(MSG), /BREVO_API_KEY/);
 });
 
 // ── Background queue ──
