@@ -57,7 +57,7 @@ export const LANGUAGE_FOR_MODEL = Object.freeze({
 /** The agent's fixed lines in each language. */
 export const PHRASES = Object.freeze({
   mixed: {
-    intro: ({ name, company, role }) => `Namaste${name ? ` ${name}` : ''}! Main${company ? ` ${company} ki taraf se` : ''} HireLens ki voice assistant bol rahi hoon, ${role} role ke liye.`
+    intro: ({ name, company, role }) => `Namaste${name ? ` ${name}` : ''}! Main${company ? ` ${company} ki taraf se` : ''} HireX ki voice assistant bol rahi hoon, ${role} role ke liye.`
       + ' Yeh call record ho rahi hai aur lagbhag saat minute ki hogi.',
     ready: 'Kya aap abhi baat karne ke liye ready hain?',
     proudProject: 'Shuru karte hain aapke kaam se. Apne kisi ek project ke baare mein bataiye jis par aapko sabse zyada garv hai: aapne kya banaya, aur usme aapka role kya tha?',
@@ -70,7 +70,7 @@ export const PHRASES = Object.freeze({
     repeat: (question) => `Sorry, main sun nahi paayi. ${question}`
   },
   en: {
-    intro: ({ name, company, role }) => `Hello${name ? ` ${name}` : ''}! I am the HireLens voice assistant${company ? ` for ${company}` : ''}, calling about the ${role} role.`
+    intro: ({ name, company, role }) => `Hello${name ? ` ${name}` : ''}! I am the HireX voice assistant${company ? ` for ${company}` : ''}, calling about the ${role} role.`
       + ' This call is recorded and will take about seven minutes.',
     ready: 'Are you ready to talk now?',
     proudProject: 'Let us start with your work. Tell me about one project you are most proud of: what did you build, and what was your role in it?',
@@ -83,7 +83,7 @@ export const PHRASES = Object.freeze({
     repeat: (question) => `Sorry, I could not hear that. ${question}`
   },
   hi: {
-    intro: ({ name, company, role }) => `नमस्ते${name ? ` ${name}` : ''}! मैं${company ? ` ${company} की तरफ़ से` : ''} HireLens की voice assistant बोल रही हूँ, ${role} role के लिए।`
+    intro: ({ name, company, role }) => `नमस्ते${name ? ` ${name}` : ''}! मैं${company ? ` ${company} की तरफ़ से` : ''} HireX की voice assistant बोल रही हूँ, ${role} role के लिए।`
       + ' यह कॉल रिकॉर्ड हो रही है और लगभग सात मिनट की होगी।',
     ready: 'क्या आप अभी बात करने के लिए तैयार हैं?',
     proudProject: 'शुरुआत आपके काम से करते हैं। अपने किसी एक project के बारे में बताइए जिस पर आपको सबसे ज़्यादा गर्व है: आपने क्या बनाया, और उसमें आपका role क्या था?',

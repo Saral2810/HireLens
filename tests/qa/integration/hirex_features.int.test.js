@@ -142,10 +142,10 @@ test('live demo: /live is a public page; by default no site may frame it (or any
 });
 
 test('PENTEST live demo embedding: only /live, only the listed https sites; bad values never widen the header', async () => {
-  process.env.LIVE_DEMO_EMBED_ORIGINS = 'https://hirelens.in,https://www.hirelens.in';
+  process.env.LIVE_DEMO_EMBED_ORIGINS = 'https://hirex.in,https://www.hirex.in';
   const live = await fetch(`${app.base}/live`);
   const csp = live.headers.get('content-security-policy');
-  assert.match(csp, /frame-ancestors 'self' https:\/\/hirelens\.in https:\/\/www\.hirelens\.in$/);
+  assert.match(csp, /frame-ancestors 'self' https:\/\/hirex\.in https:\/\/www\.hirex\.in$/);
   assert.equal(live.headers.get('x-frame-options'), null);
   assert.match(csp, /script-src 'self' https:\/\/accounts\.google\.com\/gsi\/client/, 'the rest of the policy is unchanged');
   for (const p of ['/', '/login', '/hr', '/live/', '/live/../hr', '/api/auth/me', '/LIVE']) {

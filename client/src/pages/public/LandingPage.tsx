@@ -91,7 +91,7 @@ export const LandingPage: React.FC = () => (
     </section>
 
     <footer className="footer">
-      <span>HireLens · built on Indian voice models</span>
+      <span>HireX · built on Indian voice models</span>
       <span className="spacer">Demo with made-up candidates only</span>
     </footer>
   </div>
