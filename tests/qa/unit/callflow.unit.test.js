@@ -82,7 +82,7 @@ test('buildQuestionPlan: intro → project → problems → resume → experienc
 
 test('buildQuestionPlan: a missing name or company still reads naturally', () => {
   const p = buildQuestionPlan({ candidate: { name: '' }, batch: { job_role: 'QA' } });
-  assert.match(p.intro, /^Namaste! Main HireLens ki voice assistant/);
+  assert.match(p.intro, /^Namaste! Main HireX ki voice assistant/);
   // No HR questions: ready, project, problems (no experience check either).
   assert.deepEqual(p.questions.map(q => q.source), ['intro', 'general', 'general']);
 });
