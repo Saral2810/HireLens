@@ -12,6 +12,7 @@ import { appUrl, createInviteLink, sendInviteEmail, queueInviteEmails } from '..
 import { isMailConfigured, missingMailSettings } from '../services/mailer.js';
 import { prevoiceCampaign, prevoiceEnabled } from '../services/prevoice.js';
 import { validateSchedule } from '../services/campaignScheduler.js';
+import { computeAtsScore } from '../services/ats.js';
 import {
   validateBatchInput, validateQuestionInput, normalizeCandidateRows, MAX_CANDIDATES_PER_BATCH
 } from '../utils/validation.js';
@@ -362,7 +363,21 @@ router.post('/candidates/:id/allow-retake', async (req, res, next) => {
 // Recording and resume links stop working after 10 minutes.
 const SIGNED_URL_SECONDS = 10 * 60;
 
+/**
+ * Gives resumes uploaded before ATS scoring their score, once (the text is already stored).
+ * @returns {Promise<number>} how many were scored
+ */
+async function backfillAtsScores(batch) {
+  const pending = await db.listResumesWithoutAts(batch.id);
+  for (const c of pending) {
+    const { score, breakdown } = computeAtsScore({ resumeText: c.resume_text, readable: Boolean(c.resume_text), jobRole: batch.job_role, jobDescription: batch.job_description });
+    await db.updateCandidate(c.id, { ats_score: score, ats_breakdown: breakdown });
+  }
+  return pending.length;
+}
+
 async function loadResults(batch) {
+  await backfillAtsScores(batch);
   const [questions, candidates] = await Promise.all([db.listQuestions(batch.id), db.listCandidates(batch.id)]);
   const calls = await db.listCallsForCandidates(candidates.map(c => c.id));
   const answers = await db.listAnswersForCalls(calls.map(c => c.id));
@@ -390,8 +405,10 @@ router.get('/calls/:id', async (req, res, next) => {
     const link = (bucket, path) => (path ? db.signedUrl(bucket, path, SIGNED_URL_SECONDS).catch(() => null) : null);
     const [recordingUrl, resumeUrl] = await Promise.all([link('recordings', call.recording_path), link('resumes', candidate?.resume_path)]);
     const [row] = buildResultRows({ candidates: [candidate], calls: [call], answers });
+    const b = candidate?.batch;
     res.json({
       ...row,
+      campaign: b ? { id: b.id, name: b.name, job_role: b.job_role, company_name: b.company_name || null } : null,
       transcript: call.transcript || [],
       recording_url: recordingUrl,
       resume_url: resumeUrl,

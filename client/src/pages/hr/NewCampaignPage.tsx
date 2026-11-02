@@ -287,7 +287,7 @@ export const NewCampaignPage: React.FC = () => {
                   <Field label="Start on" hint="Invite emails go out at this time.">
                     <input className="input" type="datetime-local" value={startAt} min={toLocalInput(new Date().toISOString())} onChange={e => setStartAt(e.target.value)} />
                   </Field>
-                  <Field label="Close on (optional)">
+                  <Field label="End on (optional)">
                     <input className="input" type="datetime-local" value={closeAt} min={startAt} onChange={e => setCloseAt(e.target.value)} />
                   </Field>
                 </div>

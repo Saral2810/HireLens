@@ -7,14 +7,14 @@ import { CallPreview } from '../../components/public/CallPreview';
 const STEPS = [
   { n: '01', title: 'Create a campaign', text: 'Pick the job role, keep or edit the HR questions, and add candidates from Excel or by hand.' },
   { n: '02', title: 'Run it', text: 'Candidates sign in with Google or an email code, upload a resume and check their mic.' },
-  { n: '03', title: 'The agent calls', text: 'A five-minute voice call in English, Hindi or Hinglish: questions about their resume, then yours.' },
-  { n: '04', title: 'Review results', text: 'Notice period, CTC, a summary, a fit score, the transcript and the recording, ready to export.' }
+  { n: '03', title: 'The agent calls', text: 'A seven-minute voice call in English, Hindi or Hinglish: their projects, their resume, then your questions.' },
+  { n: '04', title: 'Review results', text: 'Notice period, CTC, a summary, a fit score, an ATS score, the transcript and the recording, ready to export.' }
 ];
 
 const FEATURES = [
-  { icon: <Mic size={18} />, title: 'Natural voice calls', text: 'Gnani Prisma listens and Gnani Timbre speaks, in the browser. No phone line needed.' },
+  { icon: <Mic size={18} />, title: 'Natural voice calls', text: 'Indian voice models listen and speak, in the browser. No phone line needed.' },
   { icon: <Languages size={18} />, title: 'English, Hindi, Hinglish', text: 'Candidates answer the way they talk. "Nau lakh" becomes 9 LPA.' },
-  { icon: <FileText size={18} />, title: 'Questions from the resume', text: 'Three to five questions about each candidate\'s own projects before the HR questions.' },
+  { icon: <FileText size={18} />, title: 'Projects, resume, then HR', text: 'The agent cross-questions their proudest project, asks about their own resume, then your questions. Each resume gets an ATS score.' },
   { icon: <FileSpreadsheet size={18} />, title: 'Excel in, Excel out', text: 'Upload a sheet of candidates; download every answer as CSV or Excel.' },
   { icon: <BarChart3 size={18} />, title: 'Campaign analytics', text: 'Completion, fit scores and calls per day across every campaign.' },
   { icon: <ShieldCheck size={18} />, title: 'Roles and privacy', text: 'Admin, recruiter and candidate access are separate. Recordings stay private.' }
@@ -27,6 +27,7 @@ export const LandingPage: React.FC = () => (
       <Brand sub={false} />
       <a className="plain hide-sm" href="#how">How it works</a>
       <a className="plain hide-sm" href="#features">Features</a>
+      <Link className="plain hide-sm" to="/live">Live demo</Link>
       <div className="row spacer">
         <ThemeToggle />
         <Link to="/login" className="btn btn-ghost">Sign in</Link>
@@ -37,15 +38,16 @@ export const LandingPage: React.FC = () => (
     <div className="dots">
       <section className="hero-grid">
         <div>
-          <span className="eyebrow">AI screening calls · Gnani Prisma + Timbre</span>
-          <h1 className="display">First-round HR calls, done by an agent that sounds human.</h1>
+          <span className="eyebrow">Voice screening · Indian voice agents</span>
+          <h1 className="display">First-round HR calls, done by an Indian voice agent that sounds human.</h1>
           <p className="lead">
             Add a batch of candidates and run the campaign. Each one takes a short voice call in English or Hindi,
             and you get structured answers, a summary, a fit score and the recording.
           </p>
           <div className="row-wrap mt-lg" style={{ gap: 10 }}>
             <Link to="/login?as=hr" className="btn btn-primary btn-lg">Get started <ArrowRight size={16} /></Link>
-            <Link to="/login?as=candidate" className="btn btn-lg">I'm a candidate</Link>
+            <Link to="/live" className="btn btn-lg"><span className="live-dot on" aria-hidden="true" /> See it live</Link>
+            <Link to="/login?as=candidate" className="btn btn-lg btn-ghost">I'm a candidate</Link>
           </div>
         </div>
         <CallPreview />
@@ -89,7 +91,7 @@ export const LandingPage: React.FC = () => (
     </section>
 
     <footer className="footer">
-      <span>HR Screening · built on Gnani speech models</span>
+      <span>HireLens · built on Indian voice models</span>
       <span className="spacer">Demo with made-up candidates only</span>
     </footer>
   </div>

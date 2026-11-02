@@ -66,7 +66,7 @@ export function installFakeDb({ latencyMs = 0 } = {}) {
     async getCandidate(id) {
       await wait();
       const c = s.candidates.find(x => x.id === id);
-      return c ? clone(embedBatch(c, ['id', 'batch_id', 'user_id', 'name', 'email', 'status', 'resume_path'])) : null;
+      return c ? clone(embedBatch(c, ['id', 'batch_id', 'user_id', 'name', 'email', 'status', 'resume_path', 'ats_score', 'ats_breakdown'])) : null;
     },
     async getCandidateForUser(userId) {
       await wait();
@@ -162,7 +162,11 @@ export function installFakeDb({ latencyMs = 0 } = {}) {
     async listCandidates(batchId) {
       await wait();
       return clone(s.candidates.filter(c => c.batch_id === batchId).sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
-        .map(c => pick(c, ['id', 'batch_id', 'user_id', 'name', 'email', 'status', 'failure_reason', 'resume_path', 'invite_email_sent_at', 'invite_email_error', 'created_at', 'updated_at'])));
+        .map(c => pick(c, ['id', 'batch_id', 'user_id', 'name', 'email', 'status', 'failure_reason', 'resume_path', 'ats_score', 'ats_breakdown', 'invite_email_sent_at', 'invite_email_error', 'created_at', 'updated_at'])));
+    },
+    async listResumesWithoutAts(batchId) {
+      await wait();
+      return clone(s.candidates.filter(c => c.batch_id === batchId && c.resume_path && (c.ats_score === undefined || c.ats_score === null)).map(c => pick(c, ['id', 'resume_text'])));
     },
     async countCandidates(batchId) { await wait(); return s.candidates.filter(c => c.batch_id === batchId).length; },
     async addCandidates(batchId, rows) {

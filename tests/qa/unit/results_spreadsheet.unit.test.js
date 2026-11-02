@@ -62,8 +62,8 @@ test('BUG-20: cells starting with TAB or CR (also formula triggers in Excel/Libr
 
 test('exportTable: HR question columns follow the current questions, matched by wording', () => {
   const t = exportTable([{ name: 'A', email: 'a@x', status: 'completed', answers: [{ source: 'hr', question_text: ' Notice? ', display: '60 days' }] }], [{ question_text: 'notice?', position: 0 }]);
-  assert.equal(t.headers[10], 'notice?');
-  assert.equal(t.rows[0][10], '60 days');
+  assert.equal(t.headers[11], 'notice?');
+  assert.equal(t.rows[0][11], '60 days');
 });
 
 test('parseCsvTable: quotes, escaped quotes, semicolons, CRLF and BOM', () => {

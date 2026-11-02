@@ -171,8 +171,28 @@ export interface ResultCall {
   duration_seconds: number | null;
   summary: string | null;
   fit_score: number | null;
+  fit_breakdown?: FitBreakdown | null;
   has_recording: boolean;
   failure_reason: string | null;
+}
+
+/** How a fit score was built (rubric version 2; see backend/src/services/scoring.js). */
+export interface FitBreakdown {
+  version: number;
+  criteria: { key: string; label: string; weight: number; score: number | null; points: number | null; reason: string | null }[];
+  completeness: { key: 'completeness'; label: string; weight: number; answered: number; counted: number; points: number };
+  steering_capped: boolean;
+  total: number | null;
+}
+
+/** The resume's ATS checks (see backend/src/services/ats.js). */
+export interface AtsBreakdown {
+  version: number;
+  readable: boolean;
+  words: number;
+  matched: string[];
+  missing: string[];
+  checks: { key: string; label: string; max: number; points: number; tip: string }[];
 }
 
 export interface ResultRow {
@@ -184,6 +204,9 @@ export interface ResultRow {
   /** How many calls the candidate has had (a retake makes it more than 1). */
   attempts: number;
   call: ResultCall | null;
+  /** ATS score of the resume (0–100), null before a resume is uploaded. */
+  ats_score: number | null;
+  ats_breakdown: AtsBreakdown | null;
   notice_period_days: number | null;
   current_ctc_lpa: number | null;
   expected_ctc_lpa: number | null;
@@ -204,6 +227,7 @@ export interface TranscriptLine {
 }
 
 export interface CallDetail extends ResultRow {
+  campaign: { id: string; name: string; job_role: string; company_name: string | null } | null;
   transcript: TranscriptLine[];
   recording_url: string | null;
   resume_url: string | null;

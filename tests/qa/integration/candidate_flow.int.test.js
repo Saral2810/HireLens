@@ -34,7 +34,10 @@ test('happy path: resume → consent → full call → completed with values, su
   assert.equal(last.start.body.total_questions, 12);
 
   assert.ok(await waitFor(() => store.calls[0]?.summary), 'summary is written in the background');
-  assert.equal(store.calls[0].fit_score, 72);
+  // Rubric: 7/10 on each rated part (59.5 of 85) + every question answered (15 of 15) = 75.
+  assert.equal(store.calls[0].fit_score, 75);
+  assert.equal(store.calls[0].fit_breakdown.version, 2);
+  assert.deepEqual(store.calls[0].fit_breakdown.completeness, { key: 'completeness', label: 'Questions answered', weight: 15, answered: 11, counted: 11, points: 15 });
   assert.equal(store.candidates[0].status, 'completed');
 
   const batchId = store.batches[0].id;

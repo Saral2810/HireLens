@@ -61,7 +61,7 @@ export const DeleteCampaignModal: React.FC<Props> = ({ batch, onClose, onDeleted
             <li>the uploaded resumes and call recordings</li>
             <li>the questions and the campaign itself</li>
           </ul>
-          {live && <p className="small muted mb-sm">The campaign is live, so it is closed first: nobody can start a new call.</p>}
+          {live && <p className="small muted mb-sm">The campaign is live, so it is marked completed first: nobody can start a new call.</p>}
           <p className="small muted mb-sm">Export the results first if you may need them.</p>
           <Field label={`Type the campaign name to confirm: ${batch.name}`}>
             <input className="input" value={typed} onChange={e => setTyped(e.target.value)} autoFocus aria-label="Campaign name" />
@@ -71,7 +71,7 @@ export const DeleteCampaignModal: React.FC<Props> = ({ batch, onClose, onDeleted
       <div className="modal-foot">
         <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
         <button type="button" className="btn btn-danger" onClick={remove} disabled={busy || (started > 0 && !nameOk)}>
-          <Trash2 size={14} /> {busy ? 'Deleting…' : started && live ? 'Close and delete' : 'Delete campaign'}
+          <Trash2 size={14} /> {busy ? 'Deleting…' : started && live ? 'Complete and delete' : 'Delete campaign'}
         </button>
       </div>
     </Modal>

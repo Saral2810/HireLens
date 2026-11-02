@@ -118,7 +118,7 @@ export const CandidateHomePage: React.FC = () => {
   const batch = me.batch;
   const closed = batch?.status === 'closed' && !['completed', 'failed'].includes(me.status);
   const finished = closed
-    ? { icon: <Square size={20} />, title: 'This screening is closed', text: 'HR has closed this campaign, so new calls cannot start. Please contact the HR team if you still want to take it.' }
+    ? { icon: <Square size={20} />, title: 'This screening has ended', text: 'HR has completed this campaign, so new calls cannot start. Please contact the HR team if you still want to take it.' }
     : FINISHED[me.status];
   const step2Done = micOk && me.consent_given;
   const ready = me.has_resume && step2Done;
@@ -131,7 +131,7 @@ export const CandidateHomePage: React.FC = () => {
           <h1>Hi {firstName}, welcome!</h1>
           <p>
             You're invited to a short voice screening for <strong>{batch?.job_role}</strong>
-            {batch?.company_name ? <> at <strong>{batch.company_name}</strong></> : null}. An AI assistant asks the questions and you answer by speaking.
+            {batch?.company_name ? <> at <strong>{batch.company_name}</strong></> : null}. An Indian voice agent asks the questions and you answer by speaking.
           </p>
           <div className="hero-meta">
             <span><Clock size={12} style={{ verticalAlign: -1 }} /> About 5 minutes</span>

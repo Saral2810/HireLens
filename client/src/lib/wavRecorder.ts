@@ -1,10 +1,10 @@
-// Records one spoken answer from the mic as 16 kHz mono 16-bit WAV (Prisma does not accept
+// Records one spoken answer from the mic as 16 kHz mono 16-bit WAV (the speech-to-text service does not accept
 // Chrome's default WebM). Stops on its own after a pause in speech, or when stop() is called.
 
 export interface RecordOptions {
   /** Silence after speech that ends the answer. */
   silenceMs?: number;
-  /** Hard cap; Prisma REST accepts clips up to 60 s. */
+  /** Hard cap: answers longer than this are cut (the server sends long answers in parts). */
   maxMs?: number;
   /** Give up if no speech starts within this time. */
   noSpeechTimeoutMs?: number;

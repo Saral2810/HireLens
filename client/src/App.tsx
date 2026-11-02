@@ -6,11 +6,13 @@ import { AppHeader } from './components/layout/AppHeader';
 import { LandingPage } from './pages/public/LandingPage';
 import { LoginPage } from './pages/public/LoginPage';
 import { JoinPage } from './pages/public/JoinPage';
+import { LiveDemoPage } from './pages/public/LiveDemoPage';
 import { DashboardPage } from './pages/hr/DashboardPage';
 import { CampaignsPage } from './pages/hr/CampaignsPage';
 import { NewCampaignPage } from './pages/hr/NewCampaignPage';
 import { CampaignPage } from './pages/hr/CampaignPage';
 import { TeamPage } from './pages/hr/TeamPage';
+import { CallSummaryPage } from './pages/hr/CallSummaryPage';
 import { CandidateHomePage } from './pages/candidate/CandidateHomePage';
 
 // Three roles, three areas: Admin and Recruiter under /hr, candidates under /candidate.
@@ -22,6 +24,9 @@ export const App: React.FC = () => {
   useEffect(() => {
     initSession();
   }, []);
+
+  // The public live demo is the same for everyone, signed in or not (made-up data, no API calls).
+  if (location.pathname === '/live') return <LiveDemoPage />;
 
   if (!sessionChecked) return null;
 
@@ -53,6 +58,7 @@ export const App: React.FC = () => {
               <Route path="/hr/campaigns" element={<CampaignsPage />} />
               <Route path="/hr/campaigns/new" element={<NewCampaignPage />} />
               <Route path="/hr/campaigns/:campaignId" element={<CampaignPage />} />
+              <Route path="/hr/calls/:callId/summary" element={<CallSummaryPage />} />
               {currentUser.role === 'superadmin' && <Route path="/hr/team" element={<TeamPage />} />}
             </>
           )}

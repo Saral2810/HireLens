@@ -166,7 +166,7 @@ function summarizeLater(callId, batch) {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       const result = await summarizeCall({ batch, answers });
       if (result.summary) {
-        await db.updateCall(callId, { summary: result.summary, fit_score: result.fit_score });
+        await db.updateCall(callId, { summary: result.summary, fit_score: result.fit_score, fit_breakdown: result.fit_breakdown });
         return;
       }
       console.warn(`[Call ${callId}] No summary from the brain (attempt ${attempt}).`);

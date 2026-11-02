@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Clock, FileText, X } from 'lucide-react';
+import { ClipboardList, Clock, FileText, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { api } from '../../services/api';
 import { CallDetail, ResultAnswer } from '../../types';
 import { ErrorNote, useEscape } from '../ui/Modal';
@@ -50,6 +51,7 @@ export const CandidateResultDrawer: React.FC<{ callId: string; onClose: () => vo
               </div>
             )}
           </div>
+          {detail?.call && <Link className="btn btn-sm btn-primary" to={`/hr/calls/${detail.call.id}/summary`}><ClipboardList size={14} /> Summary of call</Link>}
           <button className="btn btn-ghost btn-icon" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
 
@@ -60,8 +62,10 @@ export const CandidateResultDrawer: React.FC<{ callId: string; onClose: () => vo
               <section className="card card-pad">
                 <div className="row mb-sm">
                   <h4 className="grow">Assessment</h4>
-                  <span className="tiny muted">Fit score</span>
+                  <span className="tiny muted">Fit</span>
                   <ScorePill score={detail.call?.fit_score} />
+                  <span className="tiny muted">ATS</span>
+                  <ScorePill score={detail.ats_score} />
                 </div>
                 <p style={{ lineHeight: 1.6 }}>{detail.call?.summary || detail.call?.failure_reason || 'No summary yet.'}</p>
                 <div className="stat-row mt" style={{ marginBottom: 0, gridTemplateColumns: 'repeat(3, 1fr)' }}>
@@ -109,7 +113,7 @@ export const CandidateResultDrawer: React.FC<{ callId: string; onClose: () => vo
                 <div className="chat">
                   {detail.transcript.map((t, i) => (
                     <div key={i} className={`bubble ${t.speaker === 'agent' ? 'bubble-agent' : 'bubble-you'}`}>
-                      <div className="bubble-who">{t.speaker === 'agent' ? 'Assistant' : detail.name}</div>
+                      <div className="bubble-who">{t.speaker === 'agent' ? 'Voice agent' : detail.name}</div>
                       {t.text || <em className="muted">(nothing heard)</em>}
                     </div>
                   ))}

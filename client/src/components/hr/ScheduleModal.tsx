@@ -34,7 +34,7 @@ export const ScheduleModal: React.FC<Props> = ({ batch, onClose, onSaved }) => {
   };
 
   return (
-    <Modal title={draft ? 'Schedule campaign' : 'Set a close time'} onClose={onClose}>
+    <Modal title={draft ? 'Schedule campaign' : 'Set an end time'} onClose={onClose}>
       <form onSubmit={submit}>
         <ErrorNote message={error} />
         {draft && (
@@ -42,7 +42,7 @@ export const ScheduleModal: React.FC<Props> = ({ batch, onClose, onSaved }) => {
             <input className="input" type="datetime-local" required value={start} min={toLocalInput(new Date().toISOString())} onChange={e => setStart(e.target.value)} />
           </Field>
         )}
-        <Field label="Close on (optional)" hint="Calls cannot start after this time. Results stay available.">
+        <Field label="End on (optional)" hint="The campaign is marked completed at this time: calls cannot start after it. Results stay available.">
           <input className="input" type="datetime-local" value={close} min={draft ? start : toLocalInput(new Date().toISOString())} onChange={e => setClose(e.target.value)} />
         </Field>
         <div className="modal-foot">

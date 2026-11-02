@@ -174,7 +174,7 @@ export const LoginPage: React.FC = () => {
             {who === 'hr' ? <HrSignIn /> : <CandidateSignIn />}
           </div>
         </div>
-        <p className="tiny muted" style={{ textAlign: 'center' }}>Voice screening with Gnani Prisma and Timbre</p>
+        <p className="tiny muted" style={{ textAlign: 'center' }}>Voice screening with Indian voice agents</p>
       </div>
       <aside className="auth-right">
         <h2 style={{ fontSize: 30, fontWeight: 500, letterSpacing: '-0.03em', maxWidth: 420 }}>

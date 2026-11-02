@@ -29,7 +29,7 @@ export function buildInviteEmail({ candidateName, jobRole, companyName, link, ex
   const text = [
     `Hi ${first},`,
     '',
-    `Thank you for applying for the ${role} role${at}. The next step is a short voice screening with our AI assistant.`,
+    `Thank you for applying for the ${role} role${at}. The next step is a short voice screening with our voice agent.`,
     '',
     'Start your screening:',
     link,
@@ -47,7 +47,7 @@ export function buildInviteEmail({ candidateName, jobRole, companyName, link, ex
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e2e2e2;border-radius:8px">
     <tr><td style="padding:28px 28px 8px">
       <p style="margin:0 0 16px;font-size:16px">Hi ${escapeHtml(first)},</p>
-      <p style="margin:0 0 16px;font-size:15px;line-height:1.5">Thank you for applying for the <strong>${escapeHtml(role)}</strong> role${company ? ` at <strong>${escapeHtml(company)}</strong>` : ''}. The next step is a short voice screening with our AI assistant.</p>
+      <p style="margin:0 0 16px;font-size:15px;line-height:1.5">Thank you for applying for the <strong>${escapeHtml(role)}</strong> role${company ? ` at <strong>${escapeHtml(company)}</strong>` : ''}. The next step is a short voice screening with our voice agent.</p>
       <p style="margin:24px 0"><a href="${escapeHtml(link)}" style="display:inline-block;background:#111;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:6px;font-size:15px;font-weight:bold">Start my screening</a></p>
       <ol style="margin:0 0 16px;padding-left:20px;font-size:14px;line-height:1.6;color:#333">
         ${steps.map(s => `<li>${escapeHtml(s)}</li>`).join('\n        ')}

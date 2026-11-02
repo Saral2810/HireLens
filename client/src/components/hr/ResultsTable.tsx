@@ -1,17 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, BarChart3, ChevronRight, Download, RefreshCw, RotateCcw } from 'lucide-react';
+import { ArrowDown, ArrowUp, BarChart3, ChevronRight, ClipboardList, Download, RefreshCw, RotateCcw } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { api } from '../../services/api';
 import { HrQuestion, ResultRow } from '../../types';
 import { EmptyState, ErrorNote } from '../ui/Modal';
 import { ScorePill, StatusBadge } from './StatusBadge';
 import { CandidateResultDrawer } from './CandidateResultDrawer';
 
-type SortKey = 'name' | 'status' | 'notice_period_days' | 'current_ctc_lpa' | 'expected_ctc_lpa' | 'fit_score';
+type SortKey = 'name' | 'status' | 'notice_period_days' | 'current_ctc_lpa' | 'expected_ctc_lpa' | 'fit_score' | 'ats_score';
 
 const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
   { key: 'name', label: 'Candidate' },
   { key: 'status', label: 'Status' },
   { key: 'fit_score', label: 'Fit', numeric: true },
+  { key: 'ats_score', label: 'ATS', numeric: true },
   { key: 'notice_period_days', label: 'Notice', numeric: true },
   { key: 'current_ctc_lpa', label: 'Current CTC', numeric: true },
   { key: 'expected_ctc_lpa', label: 'Expected CTC', numeric: true }
@@ -21,6 +23,7 @@ const STATUS_ORDER = { completed: 0, failed: 1, in_call: 2, resume_uploaded: 3, 
 
 function sortValue(row: ResultRow, key: SortKey): string | number | null {
   if (key === 'fit_score') return row.call?.fit_score ?? null;
+  if (key === 'ats_score') return row.ats_score;
   if (key === 'status') return STATUS_ORDER[row.status];
   if (key === 'name') return row.name.toLowerCase();
   return row[key];
@@ -109,7 +112,7 @@ export const ResultsTable: React.FC<{ batchId: string; onCandidatesChanged?: () 
       )}
 
       <div className="row-wrap">
-        <p className="muted small grow">Click a candidate for their answers, transcript and recording.</p>
+        <p className="muted small grow">Click a candidate for a quick look, or <strong>Summary of call</strong> for scores, answers, recording and transcript on one page.</p>
         <button className="btn btn-ghost" onClick={load} aria-label="Refresh results"><RefreshCw size={15} /> Refresh</button>
         <button className="btn" onClick={() => exportAs('csv')} disabled={!rows?.length || busy !== null}>
           <Download size={15} /> {busy === 'csv' ? 'Exporting…' : 'CSV'}
@@ -132,7 +135,7 @@ export const ResultsTable: React.FC<{ batchId: string; onCandidatesChanged?: () 
                 <thead>
                   <tr>
                     {COLUMNS.map(c => (
-                      <th key={c.key} className={c.numeric && c.key !== 'fit_score' ? 'num' : undefined}
+                      <th key={c.key} className={c.numeric && c.key !== 'fit_score' && c.key !== 'ats_score' ? 'num' : undefined}
                         aria-sort={sort.key === c.key ? (sort.desc ? 'descending' : 'ascending') : 'none'}>
                         <button className="th-sort" onClick={() => setSort(s => ({ key: c.key, desc: s.key === c.key ? !s.desc : !!c.numeric }))}>
                           {c.label}
@@ -153,9 +156,17 @@ export const ResultsTable: React.FC<{ batchId: string; onCandidatesChanged?: () 
                       <td>
                         <div className="strong">{r.name}</div>
                         <div className="tiny muted">{r.email}</div>
+                        {r.call && (
+                          // First column, so it is always in view however many question columns follow.
+                          <Link className="btn btn-sm mt-sm" to={`/hr/calls/${r.call.id}/summary`} onClick={e => e.stopPropagation()}
+                            title="Scores, answers, recording and transcript on one page">
+                            <ClipboardList size={14} /> Summary of call
+                          </Link>
+                        )}
                       </td>
                       <td><StatusBadge status={r.status} /></td>
                       <td><ScorePill score={r.call?.fit_score} /></td>
+                      <td><ScorePill score={r.ats_score} /></td>
                       <td className="num nowrap">{days(r.notice_period_days)}</td>
                       <td className="num nowrap">{lpa(r.current_ctc_lpa)}</td>
                       <td className="num nowrap">{lpa(r.expected_ctc_lpa)}</td>
