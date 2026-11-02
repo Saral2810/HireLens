@@ -23,7 +23,7 @@ function inlineScriptHashes(indexFile) {
 
 /**
  * Websites allowed to show the public live demo (/live) in a frame: LIVE_DEMO_EMBED_ORIGINS, a
- * comma-separated list such as "https://hirex.in, https://www.hirex.in". Only exact https
+ * comma-separated list such as "https://hirelens.in, https://www.hirelens.in". Only exact https
  * origins are kept (http only for localhost); anything else (paths, wildcards, quotes, other schemes)
  * is dropped, so a bad value can never widen or break the header.
  * @returns {string[]}

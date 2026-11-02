@@ -11,7 +11,7 @@ const HOST = process.env.HOST || '127.0.0.1';
 
 const server = app.listen(PORT, HOST, () => {
   console.log(`==================================================`);
-  console.log(` HireX backend running on port ${PORT}`);
+  console.log(` HireLens backend running on port ${PORT}`);
   console.log(` Open http://localhost:${PORT}`);
   console.log(`==================================================`);
   // Starts scheduled campaigns (and their invite emails) and closes campaigns at their close time.

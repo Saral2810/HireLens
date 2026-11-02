@@ -1,4 +1,4 @@
-// Live demo of a HireX campaign, for the public /live page (and for embedding on a website).
+// Live demo of a HireLens campaign, for the public /live page (and for embedding on a website).
 // Everything here is made up and runs in the browser: no API calls, no real candidates. A fixed
 // script of timed events (campaign set up → candidates added → invites → resumes → voice calls →
 // scores) is replayed; stateAt(script, t) gives the dashboard's state at any second, so the page
@@ -57,7 +57,7 @@ const PEOPLE: Persona[] = [
   { id: 'c1', name: 'Asha Rao', city: 'Pune', language: 'English + Hindi', ats: 84, fit: 82,
     summary: '4 years on Node.js payment services; led a Kafka migration and cut settlement delays. 60-day notice, expects 18 LPA.',
     lines: [
-      ['agent', 'Namaste Asha! Main Kirana Pay ki taraf se HireX ki voice assistant bol rahi hoon. Kya aap ready hain?'],
+      ['agent', 'Namaste Asha! Main Kirana Pay ki taraf se HireLens ki voice assistant bol rahi hoon. Kya aap ready hain?'],
       ['candidate', 'Haan, ready hoon.'],
       ['agent', 'Kirana Pay chhote dukaanon ke liye billing aur UPI software banata hai. Apne kisi project ke baare mein bataiye jis par aapko garv hai?'],
       ['candidate', 'Maine payments reconciliation service banayi thi Node.js mein, roz do lakh orders handle karti hai.'],
@@ -76,7 +76,7 @@ const PEOPLE: Persona[] = [
   { id: 'c3', name: 'Priya Nair', city: 'Kochi', language: 'English', ats: 62, fit: 74, fresher: true,
     summary: 'Fresher: final-year project on a real-time chat app with WebSockets, explained reconnect handling well. Expects 6 LPA.',
     lines: [
-      ['agent', 'Hello Priya! I am the HireX voice assistant for Kirana Pay. Are you ready to talk?'],
+      ['agent', 'Hello Priya! I am the HireLens voice assistant for Kirana Pay. Are you ready to talk?'],
       ['candidate', 'Yes, I am ready.'],
       ['agent', 'Tell me about one project you are most proud of.'],
       ['candidate', 'I built a chat app with WebSockets in my final year. I am a fresher, this would be my first job.'],

@@ -67,15 +67,15 @@ Automated: `tests/unit/release_2nov.test.js` (unit) and `tests/qa/integration/re
 | N6 | Take a call. | Briefing → most-proud project → a cross-question → biggest problem → a cross-question → resume questions → "full-time job before, or fresher?" → HR questions. No "Heard you say" line. |
 | N7 | Answer "Nahi, main fresher hoon" to the experience question. | Next question is expected CTC; Results show notice period and current CTC as "Not asked (fresher)". |
 
-# Test cases: 3 Nov 2026 (HireX branding, fit rubric, ATS, summary of call, live demo)
+# Test cases: 3 Nov 2026 (HireLens branding, fit rubric, ATS, summary of call, live demo)
 
-Automated: `tests/unit/hirex_features.test.js` (unit), `tests/qa/integration/hirex_features.int.test.js` (integration + penetration). UAT: `tests/qa/uat/server.js` (seeded local app, checked in a browser).
+Automated: `tests/unit/hirelens_features.test.js` (unit), `tests/qa/integration/hirelens_features.int.test.js` (integration + penetration). UAT: `tests/qa/uat/server.js` (seeded local app, checked in a browser).
 
 ## A. Automated
 
 | Area | Checks |
 |---|---|
-| Branding | No Gnani, Prisma, Timbre, Poorvi, "HR Screening" or "AI screening" in any client source file or in the built site; header and page title say HireX. |
+| Branding | No Gnani, Prisma, Timbre, Poorvi, "HR Screening" or "AI screening" in any client source file or in the built site; header and page title say HireLens. |
 | Fit score rubric | Weights add to 100; 10s → 100, 0s → 0; weighted points and reasons in the breakdown; out-of-range or text ratings dropped, missing parts scaled, fewer than 3 rated → no score; opening and fresher-skipped questions not counted; steering answers cap at 40 (also with an obedient model, end to end). |
 | ATS score | Good resume scores high with 5 explained checks totalling 100; weak resume scores low with tips; unreadable → 0 with a tip; job keywords skip filler and match plurals / node.js / short skills; same input, same score; stored on upload; old resumes scored on first results load; ATS column in CSV/Excel. |
 | Summary of call | `GET /api/hr/calls/:id` returns scores, both breakdowns, answers, transcript and campaign. |
@@ -86,7 +86,7 @@ Automated: `tests/unit/hirex_features.test.js` (unit), `tests/qa/integration/hir
 
 | # | Step | Result |
 |---|---|---|
-| U1 | Landing page | Pass: HireX · Indian voice agents; "See it live" and "Live demo" links; no model names. |
+| U1 | Landing page | Pass: HireLens · Indian voice agents; "See it live" and "Live demo" links; no model names. |
 | U2 | /live at 4× | Pass: counters, pipeline, dropped-call retry, Hindi call word for word, activity feed, shortlist. Found and fixed: new chat lines scrolled the whole page. |
 | U3 | /live?embed=1 on a phone (375 px) | Pass: no header, no sideways scroll. |
 | U4 | HR campaigns tabs | Pass: All / Live / Draft / Completed; the Completed filter shows only the ended campaign; badge reads Completed. |
