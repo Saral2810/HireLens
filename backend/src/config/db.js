@@ -75,7 +75,7 @@ const db = {
   async getCandidate(candidateId) {
     return unwrap(await requireClient()
       .from('candidates')
-      .select('id, batch_id, user_id, name, email, status, resume_path, batch:batches(id, name, batch_date, job_role, company_name, created_by, status)')
+      .select('id, batch_id, user_id, name, email, status, resume_path, ats_score, ats_breakdown, batch:batches(id, name, batch_date, job_role, company_name, created_by, status)')
       .eq('id', candidateId)
       .maybeSingle());
   },
@@ -285,10 +285,20 @@ const db = {
 
   // ── Candidates (Phase E) ──
 
+  /** Resume text of this batch's candidates who have a resume but no ATS score yet (resumes uploaded before ATS scoring). */
+  async listResumesWithoutAts(batchId) {
+    return unwrap(await requireClient()
+      .from('candidates')
+      .select('id, resume_text')
+      .eq('batch_id', batchId)
+      .not('resume_path', 'is', null)
+      .is('ats_score', null));
+  },
+
   async listCandidates(batchId) {
     return unwrap(await requireClient()
       .from('candidates')
-      .select('id, batch_id, user_id, name, email, status, failure_reason, resume_path, invite_email_sent_at, invite_email_error, created_at, updated_at')
+      .select('id, batch_id, user_id, name, email, status, failure_reason, resume_path, ats_score, ats_breakdown, invite_email_sent_at, invite_email_error, created_at, updated_at')
       .eq('batch_id', batchId)
       .order('created_at'));
   },
@@ -399,7 +409,7 @@ const db = {
     if (!candidateIds.length) return [];
     return unwrap(await requireClient()
       .from('calls')
-      .select('id, candidate_id, status, recording_path, summary, fit_score, failure_reason, started_at, ended_at')
+      .select('id, candidate_id, status, recording_path, summary, fit_score, fit_breakdown, failure_reason, started_at, ended_at')
       .in('candidate_id', candidateIds));
   },
 

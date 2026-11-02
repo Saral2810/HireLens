@@ -130,7 +130,11 @@ async function llm(init) {
         `Kisi production issue ke baare mein bataiye jo aapne fix kiya? (resume ${net.llm})`
       ] };
     } else if (kind === 'turn') reply = decideFake(user);
-    else if (kind === 'summary') reply = { summary: `QA fake summary for ${user.job_role}: ${user.answers?.length || 0} answers reviewed.`, fit_score: 72 };
+    else if (kind === 'summary') {
+      const seven = { score: 7, reason: 'QA fake reason.' };
+      reply = { summary: `QA fake summary for ${user.job_role}: ${user.answers?.length || 0} answers reviewed.`,
+        scores: { role_skills: seven, project_depth: seven, problem_solving: seven, communication: seven } };
+    }
     else reply = {};
   }
   return json({ choices: [{ message: { content: JSON.stringify(reply) } }] });

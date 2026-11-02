@@ -3,6 +3,7 @@ import multer from 'multer';
 import db from '../config/db.js';
 import { extractResumeText, MAX_RESUME_BYTES } from '../services/resumeParser.js';
 import { writeResumeQuestions } from '../services/brain.js';
+import { computeAtsScore } from '../services/ats.js';
 import { expireStaleCall } from './call.js';
 import { retriesLeft } from '../services/callFlow.js';
 import { allowedLanguages } from '../services/callLanguage.js';
@@ -44,6 +45,14 @@ function publicView(candidate, retries = 0) {
       call_languages: allowedLanguages(candidate.batch.call_languages)
     }
   };
+}
+
+/** The ATS score columns for an uploaded resume (see services/ats.js). */
+function atsFields(resume, batch) {
+  const { score, breakdown } = computeAtsScore({
+    resumeText: resume.readable ? resume.text : '', readable: resume.readable, jobRole: batch?.job_role, jobDescription: batch?.job_description
+  });
+  return { ats_score: score, ats_breakdown: breakdown };
 }
 
 /** GET /api/candidate/me → own record, batch and progress (questions stay hidden until the call). */
@@ -93,6 +102,7 @@ router.post('/resume', limits.resume, upload.single('resume'), async (req, res, 
       resume_questions: questions,
       // Read from the resume; a fresher is not asked notice period or current CTC.
       is_fresher: isFresher,
+      ...atsFields(resume, candidate.batch),
       status: 'resume_uploaded'
     });
 

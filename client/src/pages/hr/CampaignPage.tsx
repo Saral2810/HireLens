@@ -105,11 +105,11 @@ export const CampaignPage: React.FC = () => {
           <button className="btn btn-danger" onClick={() => setDeleting(true)}><Trash2 size={14} /> Delete</button>
           {status !== 'closed' && (
             <button className="btn" disabled={busy || (status === 'draft' && counts.total === 0)} title={status === 'draft' && counts.total === 0 ? 'Add candidates first' : undefined} onClick={() => setScheduling(true)}>
-              <AlarmClock size={14} /> {status === 'draft' ? (batch.scheduled_at ? 'Reschedule' : 'Schedule') : 'Close time'}
+              <AlarmClock size={14} /> {status === 'draft' ? (batch.scheduled_at ? 'Reschedule' : 'Schedule') : 'End time'}
             </button>
           )}
           {status === 'live'
-            ? <button className="btn" disabled={busy} onClick={() => window.confirm('Close this campaign? Candidates who have not finished will not be able to start a call.') && act(() => api.closeCampaign(batch.id), 'Campaign closed. Results stay available.')}><Square size={14} /> Close</button>
+            ? <button className="btn" disabled={busy} onClick={() => window.confirm('Mark this campaign as completed? Candidates who have not finished will not be able to start a call.') && act(() => api.closeCampaign(batch.id), 'Campaign completed. Results stay available.')}><Square size={14} /> Mark completed</button>
             : <button className="btn btn-primary" disabled={busy || counts.total === 0} title={counts.total === 0 ? 'Add candidates first' : undefined}
                 onClick={() => act(() => api.runCampaign(batch.id), ({ emails }) => runNotice(emails))}>
                 <Play size={14} /> {status === 'closed' ? 'Reopen' : 'Run campaign'}
@@ -123,7 +123,7 @@ export const CampaignPage: React.FC = () => {
           <AlarmClock size={15} />
           <span className="grow">
             {status === 'draft' && batch.scheduled_at && <>Starts by itself on <strong>{formatWhen(batch.scheduled_at)}</strong>; every candidate is emailed their invite then. </>}
-            {batch.closes_at && <>Closes by itself on <strong>{formatWhen(batch.closes_at)}</strong>.</>}
+            {batch.closes_at && <>Completes by itself on <strong>{formatWhen(batch.closes_at)}</strong>.</>}
           </span>
           <button className="btn btn-sm" disabled={busy} onClick={() => act(() => api.unscheduleCampaign(batch.id), 'Schedule removed.')}>Remove schedule</button>
         </div>
@@ -158,7 +158,7 @@ export const CampaignPage: React.FC = () => {
                   ? (batch.scheduled_at
                     ? `This campaign is scheduled: candidates cannot see it until ${formatWhen(batch.scheduled_at)}, when it starts and their invite emails go out. You can still add candidates and change questions.`
                     : 'This campaign is a draft: candidates cannot see it yet. Add candidates, check the questions, then press Run campaign, or Schedule it for a later day.')
-                  : 'This campaign is closed: candidates who have not finished cannot start a call. Reopen it to continue.'}
+                  : 'This campaign is completed: candidates who have not finished cannot start a call. Reopen it to continue.'}
             </p>
             <div className="row mt">
               <input className="input mono" readOnly value={candidateLink()} onFocus={e => e.target.select()} aria-label="Candidate sign-in link" style={{ fontSize: 13 }} />
@@ -175,7 +175,7 @@ export const CampaignPage: React.FC = () => {
         <ScheduleModal
           batch={batch}
           onClose={() => setScheduling(false)}
-          onSaved={(updated) => { setBatch({ ...batch, ...updated }); setScheduling(false); setNotice(updated.scheduled_at ? `Scheduled. The campaign starts on ${formatWhen(updated.scheduled_at)}.` : 'Close time saved.'); }}
+          onSaved={(updated) => { setBatch({ ...batch, ...updated }); setScheduling(false); setNotice(updated.scheduled_at ? `Scheduled. The campaign starts on ${formatWhen(updated.scheduled_at)}.` : 'End time saved.'); }}
         />
       )}
       {editing && (

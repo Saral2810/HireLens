@@ -79,6 +79,8 @@ export function buildResultRows({ candidates, calls, answers }) {
       status: c.status,
       failure_reason: c.failure_reason || null,
       attempts: all.length,
+      ats_score: typeof c.ats_score === 'number' ? c.ats_score : null,
+      ats_breakdown: c.ats_breakdown || null,
       call: call && {
         id: call.id,
         status: call.status,
@@ -87,6 +89,7 @@ export function buildResultRows({ candidates, calls, answers }) {
         duration_seconds: call.ended_at ? Math.max(0, Math.round((Date.parse(call.ended_at) - Date.parse(call.started_at)) / 1000)) : null,
         summary: call.summary,
         fit_score: call.fit_score,
+        fit_breakdown: call.fit_breakdown || null,
         has_recording: !!call.recording_path,
         failure_reason: call.failure_reason
       },
@@ -109,7 +112,7 @@ export function exportTable(rows, hrQuestions) {
   const hr = [...(hrQuestions || [])].sort((a, b) => a.position - b.position).map(q => q.question_text);
   const headers = [
     'Name', 'Email', 'Status', 'Call date', 'Call length (min)', 'Notice period (days)', 'Current CTC (LPA)', 'Expected CTC (LPA)',
-    'Fit score', 'Summary', ...hr, 'Project and resume questions and answers', 'Failure reason'
+    'Fit score', 'ATS score', 'Summary', ...hr, 'Project and resume questions and answers', 'Failure reason'
   ];
   const data = rows.map(r => {
     const byText = new Map(r.answers.filter(a => a.source === 'hr').map(a => [a.question_text.trim().toLowerCase(), a.display]));
@@ -119,7 +122,7 @@ export function exportTable(rows, hrQuestions) {
       r.call?.started_at ? r.call.started_at.slice(0, 10) : null,
       r.call?.duration_seconds != null ? Math.round(r.call.duration_seconds / 6) / 10 : null,
       r.notice_period_days, r.current_ctc_lpa, r.expected_ctc_lpa,
-      r.call?.fit_score ?? null, r.call?.summary || null,
+      r.call?.fit_score ?? null, r.ats_score ?? null, r.call?.summary || null,
       ...hr.map(text => byText.get(text.trim().toLowerCase()) ?? null),
       resume || null,
       r.failure_reason || r.call?.failure_reason || null

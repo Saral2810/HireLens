@@ -41,7 +41,7 @@ class CallEnded extends Error {}
 
 /**
  * Step 3: the screening call. The server keeps the script and the state; this component plays the
- * agent's lines, records each answer as WAV for Prisma, and records the whole call (mic + agent,
+ * agent's lines, records each answer as WAV for speech-to-text, and records the whole call (mic + agent,
  * mixed) as WebM for HR. Answer recording starts only after the agent stops speaking, to avoid echo.
  */
 export const CallPanel: React.FC<Props> = ({ ready, languages: allowed, onStart, onFinished }) => {

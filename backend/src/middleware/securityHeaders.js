@@ -22,6 +22,32 @@ function inlineScriptHashes(indexFile) {
 }
 
 /**
+ * Websites allowed to show the public live demo (/live) in a frame: LIVE_DEMO_EMBED_ORIGINS, a
+ * comma-separated list such as "https://hirelens.in, https://www.hirelens.in". Only exact https
+ * origins are kept (http only for localhost); anything else (paths, wildcards, quotes, other schemes)
+ * is dropped, so a bad value can never widen or break the header.
+ * @returns {string[]}
+ */
+export function liveEmbedOrigins(value = process.env.LIVE_DEMO_EMBED_ORIGINS) {
+  const out = [];
+  for (const raw of String(value || '').split(',').map(v => v.trim()).filter(Boolean)) {
+    let url;
+    try { url = new URL(raw); } catch { continue; }
+    const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+    const okScheme = url.protocol === 'https:' || (url.protocol === 'http:' && local);
+    if (!okScheme || url.username || url.password || url.search || url.hash || (url.pathname && url.pathname !== '/')) continue;
+    // Plain host names only: a "*." wildcard would let every subdomain frame the page.
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(url.hostname)) continue;
+    if (raw.replace(/\/$/, '') !== url.origin) continue; // no wildcards or odd spellings
+    if (!out.includes(url.origin)) out.push(url.origin);
+  }
+  return out;
+}
+
+/** The public live demo page; the only page that may be framed (by the allowlisted sites). */
+export const LIVE_DEMO_PATH = '/live';
+
+/**
  * @param {{ indexFile: string }} opts the built client's index.html
  */
 export function securityHeaders({ indexFile }) {
@@ -40,15 +66,18 @@ export function securityHeaders({ indexFile }) {
     `frame-src ${GOOGLE_GSI}`,
     "object-src 'none'",
     "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'"
+    "form-action 'self'"
   ].join('; ');
+  const lockedCsp = `${csp}; frame-ancestors 'none'`;
 
   return (req, res, next) => {
+    // The live demo (made-up data, no API calls) may be shown inside the allowlisted websites only.
+    const embedders = req.path === LIVE_DEMO_PATH ? liveEmbedOrigins() : [];
+    const framed = embedders.length > 0;
     res.set({
-      'Content-Security-Policy': csp,
+      'Content-Security-Policy': framed ? `${csp}; frame-ancestors 'self' ${embedders.join(' ')}` : lockedCsp,
       'X-Content-Type-Options': 'nosniff',
-      'X-Frame-Options': 'DENY',
+      ...(framed ? {} : { 'X-Frame-Options': 'DENY' }),
       // Only the origin, never the path or query (which can hold an invite token). Google's sign-in
       // button needs the origin to check the page is allowed to use the client ID.
       'Referrer-Policy': 'strict-origin',

@@ -11,8 +11,8 @@ export const Brand: React.FC<{ to?: string; sub?: boolean }> = ({ to = '/', sub 
   <Link to={to} className="brand">
     <span className="brand-mark"><AudioLines size={16} /></span>
     <span>
-      HR Screening
-      {sub && <span className="brand-sub">voice agent · gnani</span>}
+      HireLens
+      {sub && <span className="brand-sub">Indian voice agents</span>}
     </span>
   </Link>
 );

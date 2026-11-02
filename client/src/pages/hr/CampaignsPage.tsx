@@ -52,7 +52,8 @@ export const CampaignsPage: React.FC = () => {
     { id: 'all', label: 'All', n: campaigns?.length ?? 0 },
     { id: 'live', label: 'Live', n: count('live') },
     { id: 'draft', label: 'Draft', n: count('draft') },
-    { id: 'closed', label: 'Closed', n: count('closed') }
+    // Stored as "closed"; shown as Completed (no new calls, results kept).
+    { id: 'closed', label: 'Completed', n: count('closed') }
   ];
 
   return (

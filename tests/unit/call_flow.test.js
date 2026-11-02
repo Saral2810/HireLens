@@ -76,13 +76,16 @@ test('number answers extract a value, with a digit fallback', async () => {
   assert.deepEqual(d2.extracted, { value: 4 });
 });
 
-test('call summary is clamped, and missing when the brain is down', async () => {
+test('call summary scores with the rubric, and is missing when the brain is down', async () => {
   const answers = [
     { question_text: 'Ready?', source: 'intro', answer_text: 'haan', extracted_value: { yes: true }, outcome: 'answered' },
     { question_text: 'Notice?', source: 'hr', answer_text: 'do mahine', extracted_value: { days: 60 }, outcome: 'answered' }
   ];
-  const s = await summarizeCall({ batch: { job_role: 'Engineer' }, answers }, { llm: fakeLlm('{"summary":"Good fit.","fit_score":140}') });
+  const s = await summarizeCall({ batch: { job_role: 'Engineer' }, answers }, { llm: fakeLlm(`{"summary":"Good fit.","scores":{"role_skills":{"score":10,"reason":"r"},"project_depth":{"score":10,"reason":"r"},"problem_solving":{"score":10,"reason":"r"},"communication":{"score":10,"reason":"r"}}}`) });
   assert.deepEqual([s.summary, s.fit_score, s.source], ['Good fit.', 100, 'llm']);
+  // The old single number from the model is no longer used: no rubric ratings, no score.
+  const old = await summarizeCall({ batch: { job_role: 'Engineer' }, answers }, { llm: fakeLlm('{"summary":"Good fit.","fit_score":140}') });
+  assert.deepEqual([old.summary, old.fit_score], ['Good fit.', null]);
   const none = await summarizeCall({ batch: { job_role: 'Engineer' }, answers }, { llm: async () => null });
   assert.deepEqual([none.summary, none.fit_score, none.source], [null, null, 'none']);
 });
