@@ -160,9 +160,9 @@ test('live demo: a call shown word for word, a dropped call and its retry, and a
 // ── Embedding the live demo ──
 
 test('liveEmbedOrigins keeps only exact https origins (http for localhost)', () => {
-  assert.deepEqual(liveEmbedOrigins('https://hirex.in, https://www.hirex.in/ ,https://hirex.in'), ['https://hirex.in', 'https://www.hirex.in']);
+  assert.deepEqual(liveEmbedOrigins('https://hirelens.in, https://www.hirelens.in/ ,https://hirelens.in'), ['https://hirelens.in', 'https://www.hirelens.in']);
   assert.deepEqual(liveEmbedOrigins('http://localhost:5173'), ['http://localhost:5173']);
-  for (const bad of ['http://hirex.in', 'https://*.hirex.in', "https://a.com; script-src *", 'https://a.com/path', "'self'", '*', 'javascript:alert(1)',
+  for (const bad of ['http://hirelens.in', 'https://*.hirelens.in', "https://a.com; script-src *", 'https://a.com/path', "'self'", '*', 'javascript:alert(1)',
     'https://user:pw@a.com', 'https://a.com?x=1', 'data:text/html,hi', '']) {
     assert.deepEqual(liveEmbedOrigins(bad), [], bad);
   }
@@ -171,7 +171,7 @@ test('liveEmbedOrigins keeps only exact https origins (http for localhost)', () 
 
 // ── Branding: no old name or speech-model names in the UI ──
 
-test('the UI says HireX and Indian voice agents; no Gnani, Prisma, Timbre or "AI screening"', () => {
+test('the UI says HireLens and Indian voice agents; no Gnani, Prisma, Timbre or "AI screening"', () => {
   const root = path.resolve('client');
   const files = [path.join(root, 'index.html')];
   const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach(d => {
@@ -181,8 +181,8 @@ test('the UI says HireX and Indian voice agents; no Gnani, Prisma, Timbre or "AI
   walk(path.join(root, 'src'));
   const offenders = files.filter(f => /gnani|prisma|timbre|poorvi|vachana|HR Screening|AI screening|AI assistant/i.test(fs.readFileSync(f, 'utf8')));
   assert.deepEqual(offenders.map(f => path.relative(root, f)), []);
-  assert.match(fs.readFileSync(path.join(root, 'src/components/layout/AppHeader.tsx'), 'utf8'), /HireX/);
-  assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /<title>HireX/);
+  assert.match(fs.readFileSync(path.join(root, 'src/components/layout/AppHeader.tsx'), 'utf8'), /HireLens/);
+  assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /<title>HireLens/);
 });
 
 test('no raw HTML rendering anywhere in the UI (XSS guard for transcripts and summaries)', () => {

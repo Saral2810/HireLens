@@ -38,7 +38,7 @@ const CandidateCard: React.FC<{ c: DemoCandidate }> = ({ c }) => (
 );
 
 /**
- * /live — a public, self-running demo of a HireX campaign with made-up candidates. Nothing here
+ * /live — a public, self-running demo of a HireLens campaign with made-up candidates. Nothing here
  * talks to the server. Add ?embed=1 to drop the page header when it is shown inside another website.
  */
 export const LiveDemoPage: React.FC = () => {
@@ -178,7 +178,7 @@ export const LiveDemoPage: React.FC = () => {
         {!embed && (
           <div className="row-wrap mt-lg" style={{ justifyContent: 'center', gap: 10 }}>
             <Link to="/login?as=hr" className="btn btn-primary btn-lg">Run your own campaign</Link>
-            <Link to="/" className="btn btn-lg">How HireX works</Link>
+            <Link to="/" className="btn btn-lg">How HireLens works</Link>
           </div>
         )}
       </div>
