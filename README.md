@@ -2,7 +2,7 @@
 
 **An AI voice agent that runs first-round screening calls in the browser, plus a data pipeline that turns recruiter spreadsheets into an analytics star schema.**
 
-**Try it live: [hirelens.onrender.com](https://hirelens.onrender.com)**. Open the HR tab and choose **Continue with Google** to get your own workspace. The free hosting sleeps when idle, so the first visit can take a minute to load.
+**Try it live: [hirelens](https://hirelens-56td.onrender.com/)**. Open the HR tab and choose **Continue with Google** to get your own workspace. The free hosting sleeps when idle, so the first visit can take a minute to load.
 
 HR creates a hiring campaign and invites candidates. Each candidate uploads a resume and takes a short voice call with an AI interviewer that asks about their own projects and resume. HR then reviews a fit score, an ATS score, a summary, every answer, the transcript and the recording. No phone number is needed.
 
