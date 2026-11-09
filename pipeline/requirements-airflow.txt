@@ -1,0 +1,16 @@
+# Airflow gets its own environment (pipeline/.venv-airflow), separate from the pipeline's.
+#
+# Step 1: install Airflow with its official constraints file, which pins every dependency:
+#   python3.12 -m venv pipeline/.venv-airflow
+#   pipeline/.venv-airflow/bin/pip install -r pipeline/requirements-airflow.txt \
+#     --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt
+#
+# Step 2: upgrade the packages below past the constraints, because pip-audit found known
+# vulnerabilities in the pinned versions. `pip check` passes and all Airflow tests pass after this:
+#   pipeline/.venv-airflow/bin/pip install "certifi>=2026.10.18" "dnspython>=2.9.0" "pyjwt>=2.15.0" \
+#     "urllib3>=2.8.0" "opentelemetry-api==1.45.2" "opentelemetry-sdk==1.45.2" \
+#     opentelemetry-exporter-otlp opentelemetry-exporter-otlp-proto-common \
+#     opentelemetry-exporter-otlp-proto-grpc opentelemetry-exporter-otlp-proto-http \
+#     opentelemetry-proto opentelemetry-semantic-conventions
+apache-airflow==3.3.2
+pytest

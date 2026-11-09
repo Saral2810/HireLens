@@ -1,9 +1,9 @@
 -- ==============================================================================
 -- HR Screening Voice Agent — schema (roadmap Phase C)
--- Replaces the LeadX schema. Run on the contest project only.
+-- Replaces the earlier sales-calling schema. Run on the contest project only.
 -- ==============================================================================
 
--- ── 1. Remove the LeadX schema (all of it was empty or auto-generated) ──────
+-- ── 1. Remove the earlier sales-calling schema (it was empty or auto-generated) ─
 DROP TABLE IF EXISTS
   active_leads, agent_briefs, agent_variable_mappings, api_keys, archived_leads, audit_trail,
   background_jobs, call_events, call_logs, call_queue, call_sessions, campaign_drafts, campaigns,
