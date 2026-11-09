@@ -33,7 +33,7 @@ flowchart LR
 - **Campaign:** the job role, job description, company intro, which call languages to allow, and optionally a start and close time.
 - **Questions:** HR's own fixed questions (notice period, current CTC, and so on), added one by one or from ready-made templates, in any order.
 - **Candidates:** typed in, or uploaded from an Excel or CSV sheet (up to 100 per campaign). HR sees a preview before anything is saved.
-- **Team:** an Admin can add Recruiters. Both sign in with email and password.
+- **Team:** an Admin adds Admins and Recruiters by email on the Team page, choosing how each signs in: **Google** (no password; the first Google sign-in with that email opens their account) or a password. A Google account whose email an Admin hasn't added is refused.
 
 ### 2. Candidates get in
 

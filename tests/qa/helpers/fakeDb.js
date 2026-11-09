@@ -280,10 +280,13 @@ export function installFakeDb({ latencyMs = 0 } = {}) {
   const authUserFor = (email, meta = {}) => {
     let u = s.authUsers.find(x => x.email === email);
     if (!u) {
-      u = { id: uuid(), email, user_metadata: meta };
+      // Supabase links a verified Google sign-in to an existing account with the same email, so a
+      // profile seeded by a test (s.addProfile) is that account: reuse its id instead of a new user.
+      const existing = s.profiles.find(p => p.email === email);
+      u = { id: existing?.id || uuid(), email, user_metadata: meta };
       s.authUsers.push(u);
       // handle_new_user trigger: every new auth user gets a candidate profile.
-      s.profiles.push({ id: u.id, email, name: meta.name || null, role: 'candidate', created_at: now() });
+      if (!existing) s.profiles.push({ id: u.id, email, name: meta.name || null, role: 'candidate', created_at: now() });
     }
     return u;
   };
@@ -297,9 +300,11 @@ export function installFakeDb({ latencyMs = 0 } = {}) {
           s.linkTokens.set(hashed, user.id);
           return { data: { user, properties: { hashed_token: hashed, action_link: `http://qa.localhost/auth/v1/verify?token=${uuid()}&type=magiclink&redirect_to=${encodeURIComponent(options?.redirectTo || '')}` } }, error: null };
         },
-        async createUser({ email, user_metadata }) {
+        async createUser({ email, user_metadata, password }) {
           if (s.authUsers.some(u => u.email === email)) return { data: null, error: new Error('User already registered') };
-          return { data: { user: authUserFor(email, user_metadata) }, error: null };
+          const user = authUserFor(email, user_metadata);
+          user.has_password = typeof password === 'string' && password.length > 0;
+          return { data: { user }, error: null };
         },
         async deleteUser(id) {
           s.authUsers = s.authUsers.filter(u => u.id !== id);
@@ -312,7 +317,12 @@ export function installFakeDb({ latencyMs = 0 } = {}) {
   };
 
   // Server-side sign-in (db.exchangeLinkToken / db.signInWithGoogleIdToken). Sessions are QA test tokens.
-  const session = (u) => ({ accessToken: `test:candidate:${u.id}:${u.email}`, user: { id: u.id, email: u.email } });
+  // The token carries the account's real role, so an HR session can call HR endpoints in tests.
+  const roleOf = (id) => {
+    const role = s.profiles.find(p => p.id === id)?.role;
+    return ['superadmin', 'recruiter'].includes(role) ? role : 'candidate';
+  };
+  const session = (u) => ({ accessToken: `test:${roleOf(u.id)}:${u.id}:${u.email}`, user: { id: u.id, email: u.email } });
   fake.exchangeLinkToken = async (hash) => {
     await wait();
     const id = s.linkTokens.get(hash);

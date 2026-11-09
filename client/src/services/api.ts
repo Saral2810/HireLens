@@ -65,6 +65,13 @@ class ApiService {
     return res;
   }
 
+  /** HR team: Google's ID token → signed in, if an Admin added this email on the Team page. */
+  async googleHrToken(credential: string, nonce: string): Promise<{ token: string; user: User }> {
+    const res = await this.request<{ token: string; user: User }>('/api/auth/google/hr-token', { method: 'POST', body: JSON.stringify({ credential, nonce }) });
+    if (res.token) this.setAuthToken(res.token);
+    return res;
+  }
+
   /** Personal link from the invite email → signed in as that candidate (the server makes the session). */
   async joinScreening(token: string): Promise<{ token: string; user: User }> {
     const res = await this.request<{ token: string; user: User }>('/api/auth/join', { method: 'POST', body: JSON.stringify({ token }) });
@@ -116,7 +123,8 @@ class ApiService {
     return this.request('/api/hr/team');
   }
 
-  async addTeamMember(fields: { name: string; email: string; password: string; role: 'superadmin' | 'recruiter' }): Promise<StaffMember> {
+  /** sign_in 'google': no password, they use Google with this email. 'password': they use `password`. */
+  async addTeamMember(fields: { name: string; email: string; role: 'superadmin' | 'recruiter'; sign_in: 'google' | 'password'; password?: string }): Promise<StaffMember> {
     return this.request('/api/hr/team', { method: 'POST', body: JSON.stringify(fields) });
   }
 

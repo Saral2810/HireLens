@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import db, { createAuthClient } from '../config/db.js';
-import { requireAuth, getRole, isHr, ROLES } from '../middleware/auth.js';
+import { requireAuth, getRole, isHr, clearRoleCache, ROLES } from '../middleware/auth.js';
 import { limits } from '../middleware/rateLimit.js';
 import { appUrl, createInviteSession } from '../services/candidateInvites.js';
 import { verifyInviteToken, emailTag, InviteTokenError } from '../services/inviteToken.js';
@@ -17,6 +17,7 @@ function notConfigured(res) {
 /**
  * POST /api/auth/login  (HR team: Admin and Recruiter)
  * Checks the email/password with Supabase Auth and returns the session token and role.
+ * HR can also sign in with Google (POST /api/auth/google/hr-token).
  * Candidates sign in with Google or an email code instead.
  */
 router.post('/login', limits.loginIp, limits.loginEmail, async (req, res) => {
@@ -93,6 +94,12 @@ export function unverifiedGoogleEmail(idToken) {
   }
 }
 
+/** True when the body has a well-formed Google ID token and nonce (checked again by Supabase). */
+function validGoogleBody(credential, nonce) {
+  return typeof credential === 'string' && credential.length <= 4096 && credential.split('.').length === 3
+    && typeof nonce === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(nonce);
+}
+
 /**
  * POST /api/auth/google/token { credential, nonce } → { token, user }
  * credential = the ID token from Google's button; nonce = the random value whose SHA-256 the button
@@ -103,8 +110,7 @@ router.post('/google/token', limits.googleIp, async (req, res) => {
   try {
     const credential = req.body?.credential;
     const nonce = req.body?.nonce;
-    if (typeof credential !== 'string' || credential.length > 4096 || credential.split('.').length !== 3
-      || typeof nonce !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(nonce)) {
+    if (!validGoogleBody(credential, nonce)) {
       return res.status(400).json({ error: 'Bad Request', message: 'Google sign-in did not complete. Please try again.' });
     }
     if (!googleClientId()) return res.status(503).json({ error: 'Not configured', message: 'Google sign-in is not set up. Use the email code.' });
@@ -128,6 +134,45 @@ router.post('/google/token', limits.googleIp, async (req, res) => {
     res.json({ success: true, token: session.accessToken, user: { id: session.user.id, email: session.user.email, role: await getRole(session.user.id) } });
   } catch (err) {
     console.error('[POST /api/auth/google/token] Error:', err.message);
+    res.status(500).json({ error: 'Authentication service error.' });
+  }
+});
+
+/**
+ * POST /api/auth/google/hr-token { credential, nonce } → { token, user }
+ * HR team sign-in with Google. Only for HR accounts an Admin has already added on the Team page:
+ * the Google account's email must match one. Supabase links Google to that existing account on the
+ * first sign-in, so a newly added member needs no password. Anyone else is refused before any
+ * account is made, and every refusal is the same 401.
+ */
+router.post('/google/hr-token', limits.googleIp, async (req, res) => {
+  try {
+    const credential = req.body?.credential;
+    const nonce = req.body?.nonce;
+    if (!validGoogleBody(credential, nonce)) {
+      return res.status(400).json({ error: 'Bad Request', message: 'Google sign-in did not complete. Please try again.' });
+    }
+    if (!googleClientId()) return res.status(503).json({ error: 'Not configured', message: 'Google sign-in is not set up. Use your email and password.' });
+
+    const refuse = () => res.status(401).json({
+      error: 'Unauthorized',
+      message: 'This Google account is not on the HR team. Ask your Admin to add your work email on the Team page.'
+    });
+    const email = unverifiedGoogleEmail(credential);
+    if (!email) return refuse();
+    const profile = await db.getProfileByEmail(email);
+    if (!isHr(profile?.role)) return refuse();
+
+    const session = await db.signInWithGoogleIdToken(credential, nonce);
+    // Supabase checked the signature, audience and nonce. The signed-in account must be the very HR
+    // account found above (same id), not merely an account with the same email.
+    if (!session || session.user.id !== profile.id || session.user.email?.toLowerCase() !== email) return refuse();
+    clearRoleCache(profile.id);
+    const role = await getRole(profile.id);
+    if (!isHr(role)) return refuse();
+    res.json({ success: true, token: session.accessToken, user: { id: profile.id, email: session.user.email, role } });
+  } catch (err) {
+    console.error('[POST /api/auth/google/hr-token] Error:', err.message);
     res.status(500).json({ error: 'Authentication service error.' });
   }
 });

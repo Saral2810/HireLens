@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, LogIn, Mail } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
@@ -10,13 +10,53 @@ import { renderGoogleButton } from '../../lib/googleSignIn';
 
 type Who = 'hr' | 'candidate';
 
-/** HR: email + password. */
+/**
+ * Google's own sign-in button, shown only when Google sign-in is set up. `signIn` sends Google's ID
+ * token to the server; on success the signed-in user is loaded. Returns the button's box and state.
+ */
+function useGoogleButton(signIn: (credential: string, nonce: string) => Promise<unknown>, onError: (message: string) => void) {
+  const { setCurrentUser } = useAppStore();
+  const [ready, setReady] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.googleSignIn()
+      .then(async ({ enabled, client_id }) => {
+        if (cancelled || !enabled || !client_id || !box.current) return;
+        await renderGoogleButton(box.current, client_id, async (credential, nonce) => {
+          setBusy(true);
+          onError('');
+          try {
+            await signIn(credential, nonce);
+            setCurrentUser(await api.getMe());
+          } catch (err: any) {
+            onError(err.message);
+            setBusy(false);
+          }
+        });
+        if (!cancelled) setReady(true);
+      })
+      .catch(() => { /* no Google button: the other sign-in still works */ });
+    return () => { cancelled = true; };
+  }, [signIn, onError, setCurrentUser]);
+
+  return { box, ready, busy };
+}
+
+const signInHrWithGoogle = (credential: string, nonce: string) => api.googleHrToken(credential, nonce);
+const signInCandidateWithGoogle = (credential: string, nonce: string) => api.googleToken(credential, nonce);
+
+/** HR: Google (for members an Admin added), or email + password. */
 const HrSignIn: React.FC = () => {
   const { setCurrentUser } = useAppStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const showError = useCallback((message: string) => setError(message || null), []);
+  const google = useGoogleButton(signInHrWithGoogle, showError);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,6 +75,9 @@ const HrSignIn: React.FC = () => {
   return (
     <form onSubmit={submit}>
       <ErrorNote message={error} />
+      <div ref={google.box} style={{ display: google.ready ? 'flex' : 'none', justifyContent: 'center', minHeight: google.ready ? 44 : 0 }} aria-busy={google.busy} />
+      {google.busy && <p className="small muted" role="status" style={{ textAlign: 'center' }}>Signing you in…</p>}
+      {google.ready && <div className="divider">or use your email and password</div>}
       <Field label="Work email">
         <input type="email" required autoComplete="username" className="input" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@company.in" />
       </Field>
@@ -44,7 +87,7 @@ const HrSignIn: React.FC = () => {
       <button type="submit" className="btn btn-primary btn-block btn-lg mt-sm" disabled={busy}>
         <LogIn size={16} /> {busy ? 'Signing in…' : 'Sign in'}
       </button>
-      <p className="tiny muted mt">Recruiter accounts are created by your Admin.</p>
+      <p className="tiny muted mt">Your Admin adds you on the Team page. Then sign in with Google using that email, or with the password they gave you.</p>
     </form>
   );
 };
@@ -58,31 +101,9 @@ const CandidateSignIn: React.FC = () => {
   const [busy, setBusy] = useState<'google' | 'send' | 'verify' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const showError = useCallback((message: string) => setError(message || null), []);
   // Google's own button is shown only when it is set up; it signs in on this site.
-  const [googleReady, setGoogleReady] = useState(false);
-  const googleBox = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.googleSignIn()
-      .then(async ({ enabled, client_id }) => {
-        if (cancelled || !enabled || !client_id || !googleBox.current) return;
-        await renderGoogleButton(googleBox.current, client_id, async (credential, nonce) => {
-          setBusy('google');
-          setError(null);
-          try {
-            await api.googleToken(credential, nonce);
-            setCurrentUser(await api.getMe());
-          } catch (err: any) {
-            setError(err.message);
-            setBusy(null);
-          }
-        });
-        if (!cancelled) setGoogleReady(true);
-      })
-      .catch(() => { /* no Google button: the email code still works */ });
-    return () => { cancelled = true; };
-  }, [setCurrentUser]);
+  const google = useGoogleButton(signInCandidateWithGoogle, showError);
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,9 +136,9 @@ const CandidateSignIn: React.FC = () => {
   return (
     <div>
       <ErrorNote message={error} />
-      <div ref={googleBox} style={{ display: googleReady ? 'flex' : 'none', justifyContent: 'center', minHeight: googleReady ? 44 : 0 }} aria-busy={busy === 'google'} />
-      {busy === 'google' && <p className="small muted" role="status" style={{ textAlign: 'center' }}>Signing you in…</p>}
-      {googleReady && <div className="divider">or get a code by email</div>}
+      <div ref={google.box} style={{ display: google.ready ? 'flex' : 'none', justifyContent: 'center', minHeight: google.ready ? 44 : 0 }} aria-busy={google.busy} />
+      {google.busy && <p className="small muted" role="status" style={{ textAlign: 'center' }}>Signing you in…</p>}
+      {google.ready && <div className="divider">or get a code by email</div>}
 
       {!codeSent ? (
         <form onSubmit={send}>

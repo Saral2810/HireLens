@@ -1,23 +1,9 @@
 -- ==============================================================================
 -- HR Screening Voice Agent — schema (roadmap Phase C)
--- Replaces the earlier sales-calling schema. Run on the contest project only.
+-- Run on the contest project only.
 -- ==============================================================================
 
--- ── 1. Remove the earlier sales-calling schema (it was empty or auto-generated) ─
-DROP TABLE IF EXISTS
-  active_leads, agent_briefs, agent_variable_mappings, api_keys, archived_leads, audit_trail,
-  background_jobs, call_events, call_logs, call_queue, call_sessions, campaign_drafts, campaigns,
-  compliance_dnc_logs, concurrency_settings, concurrency_slots, config_audit_log, consent_logs,
-  cross_sell_logs, data_purge_logs, dnc_registry, lead_campaigns, lead_notes, leads, scripts,
-  tenant_users, tenant_voice_providers, webhook_endpoints, tenant_configs, external_call_logs
-  CASCADE;
-DROP FUNCTION IF EXISTS
-  fn_dispatch_acquire(varchar), fn_dispatch_release(varchar), fn_reserve_slot(varchar, uuid, varchar, varchar),
-  fn_release_slot(varchar), fn_reap_stranded_dispatches(), fn_next_callable_slot(timestamptz),
-  reap_stale_slots(integer), trg_fn_schedule_retry(), trg_fn_release_slot_on_call_session();
-DROP TYPE IF EXISTS tenant_role;
-
--- ── 2. Tables ───────────────────────────────────────────────────────────────
+-- ── 1. Tables ───────────────────────────────────────────────────────────────
 
 -- One row per signed-in user (HR or candidate). Created automatically from auth.users.
 CREATE TABLE public.profiles (
@@ -125,7 +111,7 @@ CREATE INDEX answers_call_idx             ON public.answers (call_id);
 CREATE INDEX batches_created_by_idx       ON public.batches (created_by);
 CREATE INDEX external_call_logs_session_idx ON public.external_call_logs (session_id, created_at);
 
--- ── 3. updated_at bookkeeping ───────────────────────────────────────────────
+-- ── 2. updated_at bookkeeping ───────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS trigger LANGUAGE plpgsql SET search_path = '' AS $$
 BEGIN
@@ -137,7 +123,7 @@ $$;
 CREATE TRIGGER batches_set_updated_at    BEFORE UPDATE ON public.batches    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 CREATE TRIGGER candidates_set_updated_at BEFORE UPDATE ON public.candidates FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
--- ── 4. Profiles from auth users ─────────────────────────────────────────────
+-- ── 3. Profiles from auth users ─────────────────────────────────────────────
 -- Role comes from app metadata (set only by the server): is_super_admin=true or role=superadmin.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
@@ -165,7 +151,7 @@ SELECT u.id, coalesce(u.email, ''), u.raw_user_meta_data ->> 'name',
 FROM auth.users u
 ON CONFLICT (id) DO NOTHING;
 
--- ── 5. Row Level Security ───────────────────────────────────────────────────
+-- ── 4. Row Level Security ───────────────────────────────────────────────────
 -- The backend uses the service-role key (bypasses RLS) and checks access in code too.
 -- These rules are the second safety net for anything using a user's own session.
 
@@ -213,7 +199,7 @@ CREATE POLICY calls_candidate_read ON public.calls FOR SELECT TO authenticated
 CREATE POLICY answers_candidate_read ON public.answers FOR SELECT TO authenticated
   USING (call_id IN (SELECT id FROM public.calls WHERE candidate_id IN (SELECT public.my_candidate_ids())));
 
--- ── 6. Private storage ──────────────────────────────────────────────────────
+-- ── 5. Private storage ──────────────────────────────────────────────────────
 -- resumes/<batch-id>/<candidate-id>.pdf     recordings/<batch-id>/<candidate-id>.webm
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types) VALUES
   ('resumes',    'resumes',    false, 5242880,  ARRAY['application/pdf']),

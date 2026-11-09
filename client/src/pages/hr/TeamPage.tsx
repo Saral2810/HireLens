@@ -9,8 +9,10 @@ const ROLE_HELP = {
   recruiter: 'Recruiter: creates and runs their own campaigns; sees only those.'
 };
 
-const AddMemberModal: React.FC<{ onClose: () => void; onAdded: (m: StaffMember) => void }> = ({ onClose, onAdded }) => {
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'recruiter' as 'recruiter' | 'superadmin' });
+type SignIn = 'google' | 'password';
+
+const AddMemberModal: React.FC<{ onClose: () => void; onAdded: (m: StaffMember, signIn: SignIn) => void }> = ({ onClose, onAdded }) => {
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'recruiter' as 'recruiter' | 'superadmin', sign_in: 'google' as SignIn });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,7 +21,8 @@ const AddMemberModal: React.FC<{ onClose: () => void; onAdded: (m: StaffMember) 
     setSaving(true);
     setError(null);
     try {
-      onAdded(await api.addTeamMember(form));
+      const { password, ...rest } = form;
+      onAdded(await api.addTeamMember(form.sign_in === 'password' ? { ...rest, password } : rest), form.sign_in);
     } catch (err: any) {
       setError(err.message);
       setSaving(false);
@@ -31,10 +34,20 @@ const AddMemberModal: React.FC<{ onClose: () => void; onAdded: (m: StaffMember) 
       <form onSubmit={submit}>
         <ErrorNote message={error} />
         <Field label="Name"><input className="input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} autoFocus /></Field>
-        <Field label="Work email"><input className="input" type="email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
-        <Field label="Temporary password" hint="At least 8 characters. Share it with them privately; they sign in on the HR tab.">
-          <input className="input" type="text" required minLength={8} autoComplete="new-password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+        <Field label="Work email" hint={form.sign_in === 'google' ? 'Use the email of the Google account they will sign in with.' : undefined}>
+          <input className="input" type="email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
         </Field>
+        <Field label="How they sign in">
+          <div className="segmented" role="group" aria-label="How they sign in">
+            <button type="button" aria-pressed={form.sign_in === 'google'} onClick={() => setForm({ ...form, sign_in: 'google' })}>Google</button>
+            <button type="button" aria-pressed={form.sign_in === 'password'} onClick={() => setForm({ ...form, sign_in: 'password' })}>Password</button>
+          </div>
+        </Field>
+        {form.sign_in === 'password' && (
+          <Field label="Temporary password" hint="At least 8 characters. Share it with them privately; they sign in on the HR tab.">
+            <input className="input" type="text" required minLength={8} autoComplete="new-password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+          </Field>
+        )}
         <Field label="Role" hint={ROLE_HELP[form.role]}>
           <select className="select" value={form.role} onChange={e => setForm({ ...form, role: e.target.value as 'recruiter' | 'superadmin' })}>
             <option value="recruiter">Recruiter</option>
@@ -117,7 +130,14 @@ export const TeamPage: React.FC = () => {
         </div>
       )}
 
-      {adding && <AddMemberModal onClose={() => setAdding(false)} onAdded={(m) => { setAdding(false); setNotice(`${m.name} was added as ${m.role === 'superadmin' ? 'an Admin' : 'a Recruiter'}. Share their email and temporary password with them.`); load(); }} />}
+      {adding && <AddMemberModal onClose={() => setAdding(false)} onAdded={(m, signIn) => {
+        setAdding(false);
+        const as = m.role === 'superadmin' ? 'an Admin' : 'a Recruiter';
+        setNotice(signIn === 'google'
+          ? `${m.name} was added as ${as}. They sign in on the HR tab with "Continue with Google", using ${m.email}.`
+          : `${m.name} was added as ${as}. Share their email and temporary password with them.`);
+        load();
+      }} />}
     </div>
   );
 };

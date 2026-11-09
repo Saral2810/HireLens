@@ -565,26 +565,35 @@ router.get('/team', adminOnly, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-/** POST /api/hr/team { name, email, password, role } → creates an HR account (signs in with this password). */
+/**
+ * POST /api/hr/team { name, email, role, sign_in, password? } → creates an HR account.
+ *   sign_in 'google'   : no password; they sign in with the Google account of this email
+ *   sign_in 'password' : they sign in with this password (at least 8 characters)
+ */
 router.post('/team', adminOnly, limits.teamCreate, async (req, res, next) => {
   try {
     const name = String(req.body?.name || '').trim();
     const email = String(req.body?.email || '').trim().toLowerCase();
+    const signIn = req.body?.sign_in === 'google' ? 'google' : 'password';
     const password = String(req.body?.password || '');
     const role = req.body?.role === ROLES.SUPERADMIN ? ROLES.SUPERADMIN : ROLES.RECRUITER;
     const errors = [];
     if (!name) errors.push('Name is required.');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Enter a valid email.');
-    if (password.length < 8) errors.push('The password needs at least 8 characters.');
+    if (signIn === 'password' && password.length < 8) errors.push('The password needs at least 8 characters.');
     if (errors.length) return badRequest(res, errors);
 
     const existing = await db.getProfileByEmail(email);
     if (existing) return res.status(409).json({ error: 'Conflict', message: 'An account with this email already exists.' });
 
-    const { data, error } = await db.supabase.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name } });
+    // A Google member's account has no password at all: only their Google sign-in can open it.
+    const fields = { email, email_confirm: true, user_metadata: { name } };
+    if (signIn === 'password') fields.password = password;
+    const { data, error } = await db.supabase.auth.admin.createUser(fields);
     if (error) throw error;
     const profile = await db.updateProfile(data.user.id, { role, name });
-    res.status(201).json({ ...profile, campaigns: 0 });
+    clearRoleCache(data.user.id);
+    res.status(201).json({ ...profile, campaigns: 0, sign_in: signIn });
   } catch (err) { next(err); }
 });
 
