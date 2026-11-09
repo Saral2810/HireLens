@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import db from '../../../backend/src/config/db.js';
 import { resetRateLimits } from '../../../backend/src/middleware/rateLimit.js';
 import { resetCallState } from '../../../backend/src/routes/call.js';
+import { MAIN_WORKSPACE_ID } from '../../../backend/src/middleware/auth.js';
 
 const CANDIDATE_STATUSES = ['invited', 'resume_uploaded', 'in_call', 'completed', 'failed'];
 const CALL_STATUSES = ['in_progress', 'completed', 'failed'];
@@ -23,7 +24,7 @@ const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)
 const pick = (row, cols) => (row ? Object.fromEntries(cols.map(c => [c, row[c] ?? null])) : null);
 
 export function createStore() {
-  return { profiles: [], batches: [], hr_questions: [], candidates: [], calls: [], answers: [], files: new Map(), authUsers: [], logs: [], linkTokens: new Map(), clock: Date.parse('2026-11-01T09:00:00Z') };
+  return { workspaces: [{ id: MAIN_WORKSPACE_ID, name: 'Main workspace', kind: 'main', created_at: '2026-10-01T00:00:00Z' }], profiles: [], batches: [], hr_questions: [], candidates: [], calls: [], answers: [], files: new Map(), authUsers: [], logs: [], linkTokens: new Map(), clock: Date.parse('2026-11-01T09:00:00Z') };
 }
 
 /**
@@ -54,14 +55,17 @@ export function installFakeDb({ latencyMs = 0 } = {}) {
   const batchOf = (id) => s.batches.find(b => b.id === id) || null;
   const embedBatch = (c, cols) => {
     const b = batchOf(c.batch_id);
-    return { ...pick(c, cols), batch: b && pick(b, ['id', 'name', 'batch_date', 'job_role', 'company_name', 'company_intro', 'call_languages', 'job_description', 'created_by', 'status']) };
+    return { ...pick(c, cols), batch: b && pick(b, ['id', 'name', 'batch_date', 'job_role', 'company_name', 'company_intro', 'call_languages', 'job_description', 'created_by', 'status', 'workspace_id']) };
   };
+  const HR = ['superadmin', 'hr_lead', 'recruiter'];
+  const PROFILE_COLS = ['id', 'name', 'email', 'role', 'workspace_id'];
+  const candidateIdsIn = (ws) => { const ids = new Set(s.batches.filter(b => b.workspace_id === ws).map(b => b.id)); return s.candidates.filter(c => ids.has(c.batch_id)).map(c => c.id); };
 
   const fake = {
-    async getProfile(userId) { await wait(); return clone(pick(s.profiles.find(p => p.id === userId), ['id', 'name', 'email', 'role'])); },
+    async getProfile(userId) { await wait(); return clone(pick(s.profiles.find(p => p.id === userId), PROFILE_COLS)); },
     async getProfileByEmail(email) {
       await wait();
-      return clone(pick(s.profiles.find(p => p.email === String(email).trim().toLowerCase()), ['id', 'name', 'email', 'role']));
+      return clone(pick(s.profiles.find(p => p.email === String(email).trim().toLowerCase()), PROFILE_COLS));
     },
     async getCandidate(id) {
       await wait();
@@ -88,13 +92,14 @@ export function installFakeDb({ latencyMs = 0 } = {}) {
     async listCandidatesByEmail(email) {
       await wait();
       return clone(s.candidates.filter(c => c.email === String(email).trim().toLowerCase())
-        .map(c => ({ ...pick(c, ['id', 'batch_id', 'user_id']), batch: pick(batchOf(c.batch_id), ['id', 'created_by']) })));
+        .map(c => ({ ...pick(c, ['id', 'batch_id', 'user_id']), batch: pick(batchOf(c.batch_id), ['id', 'created_by', 'workspace_id']) })));
     },
     async linkCandidateUser(candidateId, userId) { await wait(); const c = s.candidates.find(x => x.id === candidateId); if (c) c.user_id = userId; },
 
-    async listBatches({ ownerId } = {}) {
+    async listBatches({ workspaceId, ownerId } = {}) {
       await wait();
-      return clone(s.batches.filter(b => !ownerId || b.created_by === ownerId).map(b => {
+      if (!workspaceId) throw new Error('listBatches needs a workspaceId.');
+      return clone(s.batches.filter(b => b.workspace_id === workspaceId && (!ownerId || b.created_by === ownerId)).map(b => {
         const counts = { total: 0, invited: 0, resume_uploaded: 0, in_call: 0, completed: 0, failed: 0 };
         for (const c of s.candidates.filter(x => x.batch_id === b.id)) { counts.total += 1; counts[c.status] += 1; }
         return { ...b, counts };
@@ -103,6 +108,7 @@ export function installFakeDb({ latencyMs = 0 } = {}) {
     async getBatch(id) { await wait(); return clone(batchOf(id)); },
     async createBatch(fields) {
       await wait();
+      if (!fields.workspace_id) throw new FakeDbError('null value in column "workspace_id" violates not-null constraint', '23502');
       const row = { id: uuid(), status: 'draft', batch_date: new Date(s.clock).toISOString().slice(0, 10), company_name: null, company_intro: null, call_languages: ['mixed', 'en', 'hi'], scheduled_at: null, closes_at: null, job_description: null, launched_at: null, closed_at: null, created_at: now(), ...sanitize(fields) };
       s.batches.push(row);
       return clone(row);
@@ -271,8 +277,25 @@ export function installFakeDb({ latencyMs = 0 } = {}) {
       await wait();
       return clone(s.candidates.filter(c => ids.includes(c.batch_id)).map(c => pick(c, ['id', 'batch_id', 'name', 'email', 'status', 'created_at'])));
     },
-    async listStaff() { await wait(); return clone(s.profiles.filter(p => ['superadmin', 'recruiter'].includes(p.role))); },
-    async updateProfile(id, fields) { await wait(); const p = s.profiles.find(x => x.id === id); if (!p) return null; Object.assign(p, sanitize(fields)); return clone(pick(p, ['id', 'name', 'email', 'role'])); },
+    async listStaff({ workspaceId } = {}) {
+      await wait();
+      if (!workspaceId) throw new Error('listStaff needs a workspaceId.');
+      return clone(s.profiles.filter(p => HR.includes(p.role) && p.workspace_id === workspaceId));
+    },
+    async getWorkspace(id) { await wait(); return clone(s.workspaces.find(w => w.id === id) || null); },
+    async createWorkspace(fields) {
+      await wait();
+      const row = { id: uuid(), kind: 'demo', max_campaigns: null, max_candidates_per_campaign: null, max_completed_calls: null, max_members: null, max_emails_per_day: null, created_at: now(), ...sanitize(fields) };
+      s.workspaces.push(row);
+      return clone(row);
+    },
+    async countWorkspaces({ kind }) { await wait(); return s.workspaces.filter(w => w.kind === kind).length; },
+    async countBatchesInWorkspace(ws) { await wait(); return s.batches.filter(b => b.workspace_id === ws).length; },
+    async countMembers(ws) { await wait(); return s.profiles.filter(p => HR.includes(p.role) && p.workspace_id === ws).length; },
+    async candidateIdsInWorkspace(ws) { await wait(); return candidateIdsIn(ws); },
+    async countCompletedCallsInWorkspace(ws) { await wait(); const ids = new Set(candidateIdsIn(ws)); return s.calls.filter(k => k.status === 'completed' && ids.has(k.candidate_id)).length; },
+    async countInviteEmailsSince(ws, sinceIso) { await wait(); const ids = new Set(candidateIdsIn(ws)); return s.candidates.filter(c => ids.has(c.id) && c.invite_email_sent_at && Date.parse(c.invite_email_sent_at) >= Date.parse(sinceIso)).length; },
+    async updateProfile(id, fields) { await wait(); const p = s.profiles.find(x => x.id === id); if (!p) return null; Object.assign(p, sanitize(fields)); return clone(pick(p, PROFILE_COLS)); },
     async reassignBatches(from, to) { await wait(); s.batches.filter(b => b.created_by === from).forEach(b => { b.created_by = to; }); }
   };
 
@@ -318,11 +341,11 @@ export function installFakeDb({ latencyMs = 0 } = {}) {
 
   // Server-side sign-in (db.exchangeLinkToken / db.signInWithGoogleIdToken). Sessions are QA test tokens.
   // The token carries the account's real role, so an HR session can call HR endpoints in tests.
-  const roleOf = (id) => {
-    const role = s.profiles.find(p => p.id === id)?.role;
-    return ['superadmin', 'recruiter'].includes(role) ? role : 'candidate';
+  const tokenFor = (u) => {
+    const p = s.profiles.find(x => x.id === u.id);
+    return HR.includes(p?.role) && p.workspace_id ? `test:${p.role}:${u.id}:${u.email}:${p.workspace_id}` : `test:candidate:${u.id}:${u.email}`;
   };
-  const session = (u) => ({ accessToken: `test:${roleOf(u.id)}:${u.id}:${u.email}`, user: { id: u.id, email: u.email } });
+  const session = (u) => ({ accessToken: tokenFor(u), user: { id: u.id, email: u.email } });
   fake.exchangeLinkToken = async (hash) => {
     await wait();
     const id = s.linkTokens.get(hash);
@@ -343,6 +366,7 @@ export function installFakeDb({ latencyMs = 0 } = {}) {
   };
 
   Object.assign(db, fake, { supabase, isConfigured: true });
-  s.addProfile = (p) => { s.profiles.push({ created_at: now(), name: null, ...p }); return p; };
+  // HR profiles seeded by tests join the main workspace unless they name another.
+  s.addProfile = (p) => { s.profiles.push({ created_at: now(), name: null, workspace_id: HR.includes(p.role) ? MAIN_WORKSPACE_ID : null, ...p }); return p; };
   return s;
 }

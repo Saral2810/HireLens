@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import db from '../config/db.js';
 import multer from 'multer';
-import { ROLES, HR_ROLES, clearRoleCache } from '../middleware/auth.js';
+import { ROLES, HR_ROLES, isManager, clearRoleCache } from '../middleware/auth.js';
+import { LimitError, checkCampaignLimit, candidateLimit, checkMemberLimit, workspaceSummary } from '../services/workspaceLimits.js';
 import { limits } from '../middleware/rateLimit.js';
 import { computeAnalytics } from '../services/analytics.js';
 import { cellText, parseCsvTable, rowsFromTable } from '../services/spreadsheet.js';
@@ -18,8 +19,9 @@ import {
 } from '../utils/validation.js';
 
 /**
- * HR API. Mounted at /api/hr behind requireAuth + requireRole('superadmin', 'recruiter').
- * Admin (superadmin) reaches every campaign; a recruiter only their own (see canManage below).
+ * HR API. Mounted at /api/hr behind requireAuth + requireRole('superadmin', 'hr_lead', 'recruiter').
+ * Everything is scoped to the user's workspace; inside it an Admin or HR lead reaches every campaign,
+ * a recruiter only their own (see canManage below).
  * Phase D: invite links. Phase E: batches, questions, candidates. Phase H: results, export, retakes.
  * Invite emails: running a campaign (or adding people to a live one) emails each candidate a personal link.
  */
@@ -34,16 +36,29 @@ const badRequest = (res, errors) => res.status(400).json({ error: 'Bad Request',
 const notFound = (res, what) => res.status(404).json({ error: 'Not Found', message: `${what} not found.` });
 
 // ── Who can reach what (RBAC) ─────────────────────────────────────────────
-// Admin (superadmin) reaches every campaign; a recruiter only the campaigns they created.
-// Anything outside the user's reach answers 404, so ids of other people's campaigns are not confirmed.
+// Everything is inside the user's own workspace. There, an Admin or HR lead reaches every campaign;
+// a recruiter only the campaigns they created. Anything outside the user's reach answers 404, so ids
+// of other people's campaigns (or other workspaces') are not confirmed.
 
 export function canManage(user, batch) {
-  return !!batch && (user?.role === ROLES.SUPERADMIN || batch.created_by === user?.id);
+  return !!batch && !!user?.workspace_id && batch.workspace_id === user.workspace_id
+    && (isManager(user.role) || batch.created_by === user.id);
 }
 
-const adminOnly = (req, res, next) => (req.user?.role === ROLES.SUPERADMIN
+/** The campaigns this user can see: the whole workspace for managers, their own for recruiters. */
+const campaignScope = (user) => (isManager(user.role)
+  ? { workspaceId: user.workspace_id }
+  : { workspaceId: user.workspace_id, ownerId: user.id });
+
+/** Team pages: Admins and HR leads, each for their own workspace. */
+const managerOnly = (req, res, next) => (isManager(req.user?.role)
   ? next()
-  : res.status(403).json({ error: 'Forbidden', message: 'Only an Admin can do this.' }));
+  : res.status(403).json({ error: 'Forbidden', message: 'Only an Admin or HR lead can do this.' }));
+
+/** Answers a LimitError with its message; anything else goes to the error handler. */
+const limitOr = (res, next) => (err) => (err instanceof LimitError
+  ? res.status(409).json({ error: 'Limit reached', message: err.message })
+  : next(err));
 
 function guard(load, what) {
   return async (req, res, next) => {
@@ -74,7 +89,7 @@ router.use('/calls/:id', guard(async id => {
 
 router.get('/batches', async (req, res, next) => {
   try {
-    res.json(await db.listBatches(req.user.role === ROLES.SUPERADMIN ? {} : { ownerId: req.user.id }));
+    res.json(await db.listBatches(campaignScope(req.user)));
   } catch (err) { next(err); }
 });
 
@@ -82,8 +97,18 @@ router.post('/batches', async (req, res, next) => {
   try {
     const { value, errors } = validateBatchInput(req.body);
     if (errors.length) return badRequest(res, errors);
-    const batch = await db.createBatch({ ...value, created_by: req.user.id });
+    await checkCampaignLimit(req.user.workspace_id);
+    const batch = await db.createBatch({ ...value, created_by: req.user.id, workspace_id: req.user.workspace_id });
     res.status(201).json(batch);
+  } catch (err) { limitOr(res, next)(err); }
+});
+
+/** GET /api/hr/workspace → the user's workspace: name, kind, and limits with usage (demo workspaces). */
+router.get('/workspace', async (req, res, next) => {
+  try {
+    const summary = await workspaceSummary(req.user.workspace_id);
+    if (!summary) return notFound(res, 'Workspace');
+    res.json(summary);
   } catch (err) { next(err); }
 });
 
@@ -207,8 +232,9 @@ router.post('/batches/:id/candidates', async (req, res, next) => {
     if (!valid.length) return badRequest(res, ['Add at least one candidate.']);
 
     const existing = await db.countCandidates(req.params.id);
-    if (existing + valid.length > MAX_CANDIDATES_PER_BATCH) {
-      return badRequest(res, [`A batch holds at most ${MAX_CANDIDATES_PER_BATCH} candidates. It has ${existing}; you tried to add ${valid.length}.`]);
+    const max = await candidateLimit(req.user.workspace_id);
+    if (existing + valid.length > max) {
+      return badRequest(res, [`A campaign holds at most ${max} candidates${max < MAX_CANDIDATES_PER_BATCH ? ' in this demo workspace' : ''}. It has ${existing}; you tried to add ${valid.length}.`]);
     }
 
     const inserted = await db.addCandidates(req.params.id, valid);
@@ -514,7 +540,7 @@ router.delete('/batches/:id/schedule', async (req, res, next) => {
 /** GET /api/hr/analytics → numbers for every campaign the user can see. */
 router.get('/analytics', async (req, res, next) => {
   try {
-    const batches = await db.listBatches(req.user.role === ROLES.SUPERADMIN ? {} : { ownerId: req.user.id });
+    const batches = await db.listBatches(campaignScope(req.user));
     const candidates = await db.listCandidatesForBatches(batches.map(b => b.id));
     const calls = await db.listCallsForCandidates(candidates.map(c => c.id));
     res.json(computeAnalytics({ batches, candidates, calls }));
@@ -554,11 +580,26 @@ router.post('/parse-candidates', sheetUpload.single('file'), async (req, res, ne
   } catch (err) { next(err); }
 });
 
-// ── Team (Admin only) ─────────────────────────────────────────────────────
+// ── Team (Admins and HR leads, each for their own workspace) ───────────────
 
-router.get('/team', adminOnly, async (req, res, next) => {
+/** A team member the current manager may change: same workspace, not themselves, and for an HR lead only recruiters. */
+async function loadManagedMember(req, res) {
+  const { userId } = req.params;
+  if (!UUID_RE.test(userId)) { notFound(res, 'Account'); return null; }
+  if (userId === req.user.id) { badRequest(res, ['You cannot change or remove your own account.']); return null; }
+  const target = await db.getProfile(userId);
+  if (!target || !HR_ROLES.includes(target.role) || target.workspace_id !== req.user.workspace_id) { notFound(res, 'Account'); return null; }
+  if (req.user.role === ROLES.HR_LEAD && target.role !== ROLES.RECRUITER) {
+    res.status(403).json({ error: 'Forbidden', message: 'An HR lead can change only HR members (recruiters).' });
+    return null;
+  }
+  return target;
+}
+
+router.get('/team', managerOnly, async (req, res, next) => {
   try {
-    const [staff, batches] = await Promise.all([db.listStaff(), db.listBatches()]);
+    const scope = { workspaceId: req.user.workspace_id };
+    const [staff, batches] = await Promise.all([db.listStaff(scope), db.listBatches(scope)]);
     const owned = {};
     for (const b of batches) owned[b.created_by] = (owned[b.created_by] || 0) + 1;
     res.json(staff.map(s => ({ ...s, campaigns: owned[s.id] || 0, is_you: s.id === req.user.id })));
@@ -566,17 +607,22 @@ router.get('/team', adminOnly, async (req, res, next) => {
 });
 
 /**
- * POST /api/hr/team { name, email, role, sign_in, password? } → creates an HR account.
+ * POST /api/hr/team { name, email, role, sign_in, password? } → creates an HR account in the manager's workspace.
  *   sign_in 'google'   : no password; they sign in with the Google account of this email
  *   sign_in 'password' : they sign in with this password (at least 8 characters)
+ * An Admin adds Admins or Recruiters; an HR lead adds Recruiters only. Nobody can create an HR lead here.
  */
-router.post('/team', adminOnly, limits.teamCreate, async (req, res, next) => {
+router.post('/team', managerOnly, limits.teamCreate, async (req, res, next) => {
   try {
     const name = String(req.body?.name || '').trim();
     const email = String(req.body?.email || '').trim().toLowerCase();
     const signIn = req.body?.sign_in === 'google' ? 'google' : 'password';
     const password = String(req.body?.password || '');
-    const role = req.body?.role === ROLES.SUPERADMIN ? ROLES.SUPERADMIN : ROLES.RECRUITER;
+    const wantsAdmin = req.body?.role === ROLES.SUPERADMIN;
+    if (wantsAdmin && req.user.role !== ROLES.SUPERADMIN) {
+      return res.status(403).json({ error: 'Forbidden', message: 'An HR lead can add HR members (recruiters) only.' });
+    }
+    const role = wantsAdmin ? ROLES.SUPERADMIN : ROLES.RECRUITER;
     const errors = [];
     if (!name) errors.push('Name is required.');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Enter a valid email.');
@@ -585,46 +631,43 @@ router.post('/team', adminOnly, limits.teamCreate, async (req, res, next) => {
 
     const existing = await db.getProfileByEmail(email);
     if (existing) return res.status(409).json({ error: 'Conflict', message: 'An account with this email already exists.' });
+    await checkMemberLimit(req.user.workspace_id);
 
     // A Google member's account has no password at all: only their Google sign-in can open it.
     const fields = { email, email_confirm: true, user_metadata: { name } };
     if (signIn === 'password') fields.password = password;
     const { data, error } = await db.supabase.auth.admin.createUser(fields);
     if (error) throw error;
-    const profile = await db.updateProfile(data.user.id, { role, name });
+    const profile = await db.updateProfile(data.user.id, { role, name, workspace_id: req.user.workspace_id });
     clearRoleCache(data.user.id);
     res.status(201).json({ ...profile, campaigns: 0, sign_in: signIn });
-  } catch (err) { next(err); }
+  } catch (err) { limitOr(res, next)(err); }
 });
 
-/** PATCH /api/hr/team/:userId { role } → Admin ⇄ Recruiter. */
-router.patch('/team/:userId', adminOnly, async (req, res, next) => {
+/** PATCH /api/hr/team/:userId { role } → Admin ⇄ Recruiter, inside the Admin's workspace (Admins only). */
+router.patch('/team/:userId', managerOnly, async (req, res, next) => {
   try {
-    const { userId } = req.params;
-    if (!UUID_RE.test(userId)) return notFound(res, 'Account');
-    if (userId === req.user.id) return badRequest(res, ['You cannot change your own role.']);
+    if (req.user.role !== ROLES.SUPERADMIN) return res.status(403).json({ error: 'Forbidden', message: 'Only an Admin can change roles.' });
     const role = req.body?.role;
-    if (!HR_ROLES.includes(role)) return badRequest(res, ['Role must be admin or recruiter.']);
-    const target = await db.getProfile(userId);
-    if (!target || !HR_ROLES.includes(target.role)) return notFound(res, 'Account');
-    const profile = await db.updateProfile(userId, { role });
-    clearRoleCache(userId);
+    if (![ROLES.SUPERADMIN, ROLES.RECRUITER].includes(role)) return badRequest(res, ['Role must be admin or recruiter.']);
+    const target = await loadManagedMember(req, res);
+    if (!target) return;
+    if (target.role === ROLES.HR_LEAD) return badRequest(res, ['An HR lead\'s role cannot be changed.']);
+    const profile = await db.updateProfile(target.id, { role });
+    clearRoleCache(target.id);
     res.json(profile);
   } catch (err) { next(err); }
 });
 
-/** DELETE /api/hr/team/:userId → removes an HR account; its campaigns move to the Admin who removed it. */
-router.delete('/team/:userId', adminOnly, async (req, res, next) => {
+/** DELETE /api/hr/team/:userId → removes a member of the manager's workspace; their campaigns move to the remover. */
+router.delete('/team/:userId', managerOnly, async (req, res, next) => {
   try {
-    const { userId } = req.params;
-    if (!UUID_RE.test(userId)) return notFound(res, 'Account');
-    if (userId === req.user.id) return badRequest(res, ['You cannot remove your own account.']);
-    const target = await db.getProfile(userId);
-    if (!target || !HR_ROLES.includes(target.role)) return notFound(res, 'Account');
-    await db.reassignBatches(userId, req.user.id);
-    const { error } = await db.supabase.auth.admin.deleteUser(userId);
+    const target = await loadManagedMember(req, res);
+    if (!target) return;
+    await db.reassignBatches(target.id, req.user.id);
+    const { error } = await db.supabase.auth.admin.deleteUser(target.id);
     if (error) throw error;
-    clearRoleCache(userId);
+    clearRoleCache(target.id);
     res.status(204).end();
   } catch (err) { next(err); }
 });

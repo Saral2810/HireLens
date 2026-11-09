@@ -74,10 +74,20 @@ test('spreadsheet: CSV with quotes, semicolons and BOM; Excel cell shapes', () =
   assert.equal(cellText({ formula: 'A1', result: 'x@y.z' }), 'x@y.z');
 });
 
-test('RBAC: Admin manages every campaign, a recruiter only their own', () => {
-  const batch = { id: 'b1', created_by: 'r1' };
-  assert.equal(canManage({ id: 'a1', role: 'superadmin' }, batch), true);
-  assert.equal(canManage({ id: 'r1', role: 'recruiter' }, batch), true);
-  assert.equal(canManage({ id: 'r2', role: 'recruiter' }, batch), false);
-  assert.equal(canManage({ id: 'r1', role: 'recruiter' }, null), false);
+test('RBAC: inside a workspace an Admin or HR lead manages every campaign, a recruiter only their own', () => {
+  const batch = { id: 'b1', created_by: 'r1', workspace_id: 'ws-1' };
+  assert.equal(canManage({ id: 'a1', role: 'superadmin', workspace_id: 'ws-1' }, batch), true);
+  assert.equal(canManage({ id: 'l1', role: 'hr_lead', workspace_id: 'ws-1' }, batch), true);
+  assert.equal(canManage({ id: 'r1', role: 'recruiter', workspace_id: 'ws-1' }, batch), true);
+  assert.equal(canManage({ id: 'r2', role: 'recruiter', workspace_id: 'ws-1' }, batch), false);
+  assert.equal(canManage({ id: 'r1', role: 'recruiter', workspace_id: 'ws-1' }, null), false);
+});
+
+test('RBAC: nobody reaches another workspace, not even its Admin or the creator', () => {
+  const batch = { id: 'b1', created_by: 'r1', workspace_id: 'ws-1' };
+  assert.equal(canManage({ id: 'a2', role: 'superadmin', workspace_id: 'ws-2' }, batch), false);
+  assert.equal(canManage({ id: 'l2', role: 'hr_lead', workspace_id: 'ws-2' }, batch), false);
+  assert.equal(canManage({ id: 'r1', role: 'recruiter', workspace_id: 'ws-2' }, batch), false, 'moved to another workspace');
+  assert.equal(canManage({ id: 'a1', role: 'superadmin', workspace_id: null }, batch), false, 'no workspace, no access');
+  assert.equal(canManage({ id: 'a1', role: 'superadmin', workspace_id: 'ws-1' }, { id: 'b2', created_by: 'x' }), false, 'a campaign without a workspace');
 });

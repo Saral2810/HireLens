@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, FolderPlus, Plus } from 'lucide-react';
 import { api } from '../../services/api';
-import { Analytics } from '../../types';
+import { Analytics, isManagerRole } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { EmptyState, ErrorNote } from '../../components/ui/Modal';
 import { ScorePill } from '../../components/hr/StatusBadge';
@@ -75,7 +75,7 @@ export const DashboardPage: React.FC = () => {
     <div>
       <div className="page-head">
         <div>
-          <span className="eyebrow">{currentUser?.role === 'superadmin' ? 'All campaigns' : 'Your campaigns'}</span>
+          <span className="eyebrow">{isManagerRole(currentUser?.role) ? 'All campaigns' : 'Your campaigns'}</span>
           <h1>{greeting()}{firstName ? `, ${firstName}` : ''}</h1>
         </div>
         <Link to="/hr/campaigns/new" className="btn btn-primary"><Plus size={16} /> New campaign</Link>

@@ -76,6 +76,10 @@ export const limits = {
   verifyIp: rateLimit({ windowMs: 15 * MIN, max: 20, key: byIp }),
   googleIp: rateLimit({ windowMs: 15 * MIN, max: 30, key: byIp, message: 'Too many sign-in attempts. Please wait 15 minutes and try again.' }),
   joinIp: rateLimit({ windowMs: 15 * MIN, max: 300, key: byIp }),
+  // HR sign-up through the sign-up link: checking the code, and creating a workspace.
+  signupCheckIp: rateLimit({ windowMs: 15 * MIN, max: 20, key: byIp, message: 'Too many attempts. Please wait 15 minutes and try again.' }),
+  // Also used to sign in, when sign-up is open; creating workspaces is capped separately (MAX_DEMO_WORKSPACES).
+  signupIp: rateLimit({ windowMs: HOUR, max: 20, key: byIp, message: 'Too many sign-ins from this network. Please try again in an hour.' }),
   joinToken: rateLimit({ windowMs: 15 * MIN, max: 20, key: (req) => (typeof req.body?.token === 'string' ? `token:${req.body.token.slice(-43)}` : null) }),
   // Candidate actions that spend LLM / Gnani credits.
   resume: rateLimit({ windowMs: HOUR, max: 6, key: byUser, message: 'You have uploaded your resume many times. Please try again in an hour, or contact HR.' }),

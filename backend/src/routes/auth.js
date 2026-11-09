@@ -1,7 +1,9 @@
+import crypto from 'crypto';
 import { Router } from 'express';
 import db, { createAuthClient } from '../config/db.js';
 import { requireAuth, getRole, isHr, clearRoleCache, ROLES } from '../middleware/auth.js';
 import { limits } from '../middleware/rateLimit.js';
+import { DEMO_LIMITS } from '../services/workspaceLimits.js';
 import { appUrl, createInviteSession } from '../services/candidateInvites.js';
 import { verifyInviteToken, emailTag, InviteTokenError } from '../services/inviteToken.js';
 
@@ -173,6 +175,131 @@ router.post('/google/hr-token', limits.googleIp, async (req, res) => {
     res.json({ success: true, token: session.accessToken, user: { id: profile.id, email: session.user.email, role } });
   } catch (err) {
     console.error('[POST /api/auth/google/hr-token] Error:', err.message);
+    res.status(500).json({ error: 'Authentication service error.' });
+  }
+});
+
+// ── HR sign-up with Google ──
+// Anyone who signs in with Google can create their own demo workspace and becomes its HR lead
+// (never an Admin). Google sign-in keeps bots out; demo limits and a total cap keep costs bounded.
+// Who may sign up (HR_SIGNUP and HR_SIGNUP_CODE in the environment):
+//   open  default: anyone, with "Continue with Google" on the HR sign-in tab
+//   code  HR_SIGNUP_CODE set: only through <app>/login?signup=<HR_SIGNUP_CODE>
+//   off   HR_SIGNUP=off: nobody
+
+const SIGNUP_CODE_MIN_LENGTH = 16;
+
+/** The sign-up code from the environment; empty unless it is long enough to be unguessable. */
+function signupCode() {
+  const code = (process.env.HR_SIGNUP_CODE || '').trim();
+  return code.length >= SIGNUP_CODE_MIN_LENGTH ? code : '';
+}
+
+/** 'open' | 'code' | 'off' (see above). */
+export function signupMode() {
+  if ((process.env.HR_SIGNUP || '').trim().toLowerCase() === 'off') return 'off';
+  const raw = (process.env.HR_SIGNUP_CODE || '').trim();
+  // A code that is set but too short to be safe closes sign-up rather than opening it.
+  if (raw && !signupCode()) return 'off';
+  return signupCode() ? 'code' : 'open';
+}
+
+/** Whether a sign-up with this code (may be empty) is allowed right now. */
+function signupAllowed(code) {
+  const mode = signupMode();
+  return mode === 'open' || (mode === 'code' && signupCodeMatches(code));
+}
+
+/** Compares in constant time (hashes first, so lengths do not leak either). */
+function signupCodeMatches(given) {
+  const expected = signupCode();
+  if (!expected || typeof given !== 'string' || given.length > 256) return false;
+  const hash = (v) => crypto.createHash('sha256').update(v).digest();
+  return crypto.timingSafeEqual(hash(given), hash(expected));
+}
+
+/** How many sign-up workspaces may exist in total (a backstop if the link is shared too widely). */
+function maxDemoWorkspaces() {
+  const n = Number(process.env.MAX_DEMO_WORKSPACES ?? 25);
+  return Number.isInteger(n) && n >= 0 ? n : 25;
+}
+
+/** The name in a Google ID token (read after Supabase has checked the token). */
+function googleName(idToken) {
+  try {
+    const payload = JSON.parse(Buffer.from(String(idToken).split('.')[1] || '', 'base64url').toString('utf8'));
+    return typeof payload?.name === 'string' ? payload.name.trim().slice(0, 120) : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * GET /api/auth/hr-signup[?code=…] → { open, valid }
+ *   open  : anyone may sign up from the HR tab (no code needed)
+ *   valid : signing up with this code (or none, when open) works right now
+ */
+router.get('/hr-signup', limits.signupCheckIp, async (req, res) => {
+  const ready = Boolean(googleClientId()) && Boolean(process.env.SUPABASE_URL) && await googleEnabled();
+  const code = typeof req.query?.code === 'string' ? req.query.code : '';
+  res.json({ open: ready && signupMode() === 'open', valid: ready && signupAllowed(code) });
+});
+
+/**
+ * POST /api/auth/google/hr-signup { credential, nonce, code?, workspace_name? } → { token, user, workspace }
+ * Creates a new demo workspace (with usage limits) and makes this Google account its HR lead.
+ * Someone who already has an HR account is simply signed in. Emails used for a candidate screening
+ * cannot sign up, so one person is never both candidate and HR.
+ */
+router.post('/google/hr-signup', limits.signupIp, async (req, res) => {
+  try {
+    const { credential, nonce, code } = req.body || {};
+    if (!validGoogleBody(credential, nonce)) {
+      return res.status(400).json({ error: 'Bad Request', message: 'Google sign-in did not complete. Please try again.' });
+    }
+    if (!signupAllowed(code)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: signupMode() === 'off'
+          ? 'New sign-ups are closed right now.'
+          : 'This sign-up link is not valid. Ask the person who shared it for a new one.'
+      });
+    }
+    if (!googleClientId()) return res.status(503).json({ error: 'Not configured', message: 'Google sign-in is not set up on this site.' });
+    const rawName = typeof req.body?.workspace_name === 'string' ? req.body.workspace_name.trim() : '';
+    if (rawName.length > 120) return res.status(400).json({ error: 'Bad Request', message: 'Keep the workspace name under 120 characters.' });
+
+    const refuse = () => res.status(401).json({ error: 'Unauthorized', message: 'We could not sign you in with this Google account. Please try again.' });
+    const email = unverifiedGoogleEmail(credential);
+    if (!email) return refuse();
+    if ((await db.listCandidatesByEmail(email)).length) {
+      return res.status(409).json({ error: 'Conflict', message: 'This email is used for a candidate screening here. Please sign up with a different Google account.' });
+    }
+    const existing = await db.getProfileByEmail(email);
+    if (!isHr(existing?.role) && (await db.countWorkspaces({ kind: 'demo' })) >= maxDemoWorkspaces()) {
+      return res.status(503).json({ error: 'Sign-ups paused', message: 'New sign-ups are paused right now. Please contact the person who shared this link.' });
+    }
+
+    const session = await db.signInWithGoogleIdToken(credential, nonce);
+    if (!session || session.user.email?.toLowerCase() !== email) return refuse();
+
+    // Already on an HR team (or a double click finished first): just sign them in.
+    const profile = await db.getProfile(session.user.id);
+    if (isHr(profile?.role) && profile.workspace_id) {
+      return res.json({ success: true, token: session.accessToken, user: { id: session.user.id, email, role: profile.role }, workspace: null });
+    }
+
+    const name = (profile?.name || googleName(credential) || email.split('@')[0]).slice(0, 120);
+    const workspace = await db.createWorkspace({ name: rawName || `${name}'s workspace`, kind: 'demo', ...DEMO_LIMITS, created_by: session.user.id });
+    await db.updateProfile(session.user.id, { role: ROLES.HR_LEAD, workspace_id: workspace.id, name });
+    clearRoleCache(session.user.id);
+    res.status(201).json({
+      success: true, token: session.accessToken,
+      user: { id: session.user.id, email, role: ROLES.HR_LEAD },
+      workspace: { id: workspace.id, name: workspace.name }
+    });
+  } catch (err) {
+    console.error('[POST /api/auth/google/hr-signup] Error:', err.message);
     res.status(500).json({ error: 'Authentication service error.' });
   }
 });

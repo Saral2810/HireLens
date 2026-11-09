@@ -1,4 +1,4 @@
-import { Analytics, AnswerType, Batch, BatchDetail, BatchResults, CallDetail, CallEndReason, CallLanguage, StaffMember, CallStartResult, CallTurnResult, CandidatePortal, CandidateRow, EmailQueueResult, HrQuestion, InviteLinkResult, ResumeUploadResult, User } from '../types';
+import { Analytics, AnswerType, Batch, BatchDetail, BatchResults, CallDetail, CallEndReason, CallLanguage, StaffMember, WorkspaceSummary, CallStartResult, CallTurnResult, CandidatePortal, CandidateRow, EmailQueueResult, HrQuestion, InviteLinkResult, ResumeUploadResult, User } from '../types';
 
 const TOKEN_KEY = 'hr_auth_token';
 
@@ -65,6 +65,20 @@ class ApiService {
     return res;
   }
 
+  /** open: anyone may sign up from the HR tab. valid: signing up with this code (or none, when open) works now. */
+  async hrSignupStatus(code = ''): Promise<{ open: boolean; valid: boolean }> {
+    return this.request(code ? `/api/auth/hr-signup?code=${encodeURIComponent(code)}` : '/api/auth/hr-signup');
+  }
+
+  /** Sign-up link + Google → a new demo workspace with this person as its HR lead (or signed in, if already HR). */
+  async googleHrSignup(credential: string, nonce: string, code: string, workspaceName: string): Promise<{ token: string; user: User; workspace: { id: string; name: string } | null }> {
+    const res = await this.request<{ token: string; user: User; workspace: { id: string; name: string } | null }>('/api/auth/google/hr-signup', {
+      method: 'POST', body: JSON.stringify({ credential, nonce, code, workspace_name: workspaceName })
+    });
+    if (res.token) this.setAuthToken(res.token);
+    return res;
+  }
+
   /** HR team: Google's ID token → signed in, if an Admin added this email on the Team page. */
   async googleHrToken(credential: string, nonce: string): Promise<{ token: string; user: User }> {
     const res = await this.request<{ token: string; user: User }>('/api/auth/google/hr-token', { method: 'POST', body: JSON.stringify({ credential, nonce }) });
@@ -117,6 +131,11 @@ class ApiService {
     const form = new FormData();
     form.append('file', file, file.name);
     return this.request('/api/hr/parse-candidates', { method: 'POST', body: form });
+  }
+
+  /** The signed-in HR user's workspace, with limits and usage for demo workspaces. */
+  async workspace(): Promise<WorkspaceSummary> {
+    return this.request('/api/hr/workspace');
   }
 
   async team(): Promise<StaffMember[]> {

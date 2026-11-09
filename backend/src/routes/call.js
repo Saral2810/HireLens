@@ -4,6 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import db from '../config/db.js';
 import { limits } from '../middleware/rateLimit.js';
+import { LimitError, checkCallLimit } from '../services/workspaceLimits.js';
 import { transcribe, speakCached, SpeechError } from '../services/gnaniSpeech.js';
 import { decideTurn, summarizeCall, translateQuestions, writeCompanyBriefing, soundsLikeFresher, saysNoFullTimeJob } from '../services/brain.js';
 import { buildQuestionPlan, spokenText } from '../services/questionPlan.js';
@@ -190,6 +191,13 @@ router.post('/start', limits.callStart, async (req, res, next) => {
         : 'Your screening call has already taken place. Please contact the HR team.');
     }
     if (!candidate.consent_at) return res.status(400).json({ error: 'Bad Request', message: 'Agree to the recording first.' });
+    // A demo workspace has a set number of calls (they spend speech and LLM credits).
+    try {
+      await checkCallLimit(candidate.batch?.workspace_id);
+    } catch (err) {
+      if (err instanceof LimitError) return conflict(res, err.message);
+      throw err;
+    }
 
     // Wait for a free line. Checked and reserved in one synchronous step, so two starts cannot both take the last one.
     if (activeCallCount() >= maxActiveCalls()) {

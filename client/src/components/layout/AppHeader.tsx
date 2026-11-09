@@ -2,9 +2,9 @@ import React from 'react';
 import { AudioLines, FolderKanban, LayoutDashboard, LogOut, Moon, Sun, Users } from 'lucide-react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
-import { isHrRole } from '../../types';
+import { isHrRole, isManagerRole } from '../../types';
 
-export const ROLE_LABELS = { superadmin: 'Admin', recruiter: 'Recruiter', candidate: 'Candidate' } as const;
+export const ROLE_LABELS = { superadmin: 'Admin', hr_lead: 'HR lead', recruiter: 'Recruiter', candidate: 'Candidate' } as const;
 
 /** Logo mark used in the header and on public pages. */
 export const Brand: React.FC<{ to?: string; sub?: boolean }> = ({ to = '/', sub = true }) => (
@@ -49,7 +49,7 @@ export const AppHeader: React.FC = () => {
         <nav className="nav" aria-label="Main">
           <NavLink to="/hr" end className={navClass}><LayoutDashboard size={15} /><span>Dashboard</span></NavLink>
           <NavLink to="/hr/campaigns" className={navClass}><FolderKanban size={15} /><span>Campaigns</span></NavLink>
-          {currentUser.role === 'superadmin' && <NavLink to="/hr/team" className={navClass}><Users size={15} /><span>Team</span></NavLink>}
+          {isManagerRole(currentUser.role) && <NavLink to="/hr/team" className={navClass}><Users size={15} /><span>Team</span></NavLink>}
         </nav>
       )}
       <div className="row spacer">

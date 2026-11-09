@@ -2,6 +2,8 @@
 
 **An AI voice agent that runs first-round screening calls in the browser, plus a data pipeline that turns recruiter spreadsheets into an analytics star schema.**
 
+**Try it live: [hirelens.onrender.com](https://hirelens.onrender.com)**. Open the HR tab and choose **Continue with Google** to get your own workspace. The free hosting sleeps when idle, so the first visit can take a minute to load.
+
 HR creates a hiring campaign and invites candidates. Each candidate uploads a resume and takes a short voice call with an AI interviewer that asks about their own projects and resume. HR then reviews a fit score, an ATS score, a summary, every answer, the transcript and the recording. No phone number is needed.
 
 HireLens is built on a new framework inspired by outbound sales-calling voice agents, redesigned for browser-based HR screening. It was made for the Gnani AI "Great Indian AI Internship Challenge" and runs on Gnani's models:
@@ -34,6 +36,20 @@ flowchart LR
 - **Questions:** HR's own fixed questions (notice period, current CTC, and so on), added one by one or from ready-made templates, in any order.
 - **Candidates:** typed in, or uploaded from an Excel or CSV sheet (up to 100 per campaign). HR sees a preview before anything is saved.
 - **Team:** an Admin adds Admins and Recruiters by email on the Team page, choosing how each signs in: **Google** (no password; the first Google sign-in with that email opens their account) or a password. A Google account whose email an Admin hasn't added is refused.
+- **Workspaces:** each HR team works in its own workspace. Campaigns, candidates, results and the team are visible only inside it.
+
+### Try it yourself: sign up with Google
+
+Anyone can open the site, choose **Continue with Google** on the HR tab, and get their **own workspace** as its **HR lead**. From there they create campaigns, invite candidates, add HR members (Recruiters) and see results, without ever seeing anyone else's data. An HR lead is never an Admin and can't add Admins. Signing in with Google keeps bots out.
+
+Sign-up workspaces are demos with limits, because calls use speech and AI credits and invites go out from the app's mailbox: 3 campaigns, 10 candidates per campaign, 25 completed calls, 5 team members and 30 invite emails a day. The site owner can close sign-ups (`HR_SIGNUP=off`), limit them to a secret link (`HR_SIGNUP_CODE`), and cap the total number of workspaces (`MAX_DEMO_WORKSPACES`).
+
+| Role | Can do |
+|---|---|
+| Admin | Everything in their workspace, including adding Admins and Recruiters |
+| HR lead | Everything in their sign-up workspace; adds and removes Recruiters only |
+| Recruiter | Their own campaigns only |
+| Candidate | Their own screening only |
 
 ### 2. Candidates get in
 
@@ -213,7 +229,8 @@ tests/                     app tests
 ## Security and privacy
 
 - **Keys:** stay on the server; never sent to the browser or committed (`.env` is ignored by Git).
-- **Database:** Row Level Security, so candidates can only read their own records.
+- **Database:** Row Level Security, so each workspace sees only its own data and candidates only their own records.
+- **Sign-up:** Google sign-in only, so bots can't create workspaces; each workspace has usage limits, and their total number is capped.
 - **Recordings:** played through short-lived signed links.
 - **Requests:** rate limits and security headers on every request.
 - **Pipeline:** file size limits, safe Excel parsing, no SQL built from input, and hashed emails in analytics.

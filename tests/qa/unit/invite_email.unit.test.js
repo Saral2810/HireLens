@@ -192,7 +192,7 @@ test('mailer: an SMTP connection timeout points at the email API', async () => {
 test('queue: emails only people not yet emailed and not finished, at most 2 at a time, and records each result', async () => {
   const store = installFakeDb();
   const mail = installFakeMail({ latencyMs: 15, fail: (m) => (m.to === 'bad@qa.test' ? new Error('550 mailbox unavailable') : null) });
-  const batch = await (await import('../../../backend/src/config/db.js')).default.createBatch({ name: 'B', job_role: 'SDE', created_by: 'a', status: 'live' });
+  const batch = await (await import('../../../backend/src/config/db.js')).default.createBatch({ name: 'B', job_role: 'SDE', created_by: 'a', status: 'live', workspace_id: '00000000-0000-0000-0000-000000000001' });
   const db = (await import('../../../backend/src/config/db.js')).default;
   await db.addCandidates(batch.id, [1, 2, 3, 4, 5].map(i => ({ name: `P${i}`, email: `p${i}@qa.test` })).concat({ name: 'Bad', email: 'bad@qa.test' }));
   store.candidates[0].invite_email_sent_at = '2026-11-01T09:00:00Z';
