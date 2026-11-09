@@ -3,15 +3,15 @@
 -- For a NEW Supabase project: paste into Supabase → SQL Editor → Run.
 -- Generated from migrations/20261025_hr_screening_schema.sql, 20261025_rls_private_helpers.sql,
 -- 20261025_candidate_resume_questions.sql, 20261026_roles_campaigns.sql, 20261026_invite_emails.sql (in that order).
--- (Step 1 drops the old legacy tables if present; on a fresh project it does nothing.)
+-- (Step 1 drops the earlier sales-calling tables if present; on a fresh project it does nothing.)
 -- ==============================================================================
 
 -- ==============================================================================
 -- HR Screening Voice Agent — schema (roadmap Phase C)
--- Replaces the legacy schema. Run on the contest project only.
+-- Replaces the earlier sales-calling schema. Run on the contest project only.
 -- ==============================================================================
 
--- ── 1. Remove the legacy schema (all of it was empty or auto-generated) ──────
+-- ── 1. Remove the earlier sales-calling schema (it was empty or auto-generated) ─
 DROP TABLE IF EXISTS
   active_leads, agent_briefs, agent_variable_mappings, api_keys, archived_leads, audit_trail,
   background_jobs, call_events, call_logs, call_queue, call_sessions, campaign_drafts, campaigns,

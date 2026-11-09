@@ -35,3 +35,11 @@ recordings/
 *.csv
 *.xlsx
 
+
+# Data pipeline: local environment and generated data
+pipeline/.venv/
+pipeline/data/
+__pycache__/
+.pytest_cache/
+pipeline/.venv-airflow/
+pipeline/airflow_home/

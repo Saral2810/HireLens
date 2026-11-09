@@ -41,4 +41,3 @@ The backend uses the service-role key (which bypasses these rules) and also chec
 
 - `setup.sql`: everything above in one file.
 - `migrations/`: the same SQL as applied, in order.
-- `legacy/`: the old legacy schema, for reference only. Do not run it.
