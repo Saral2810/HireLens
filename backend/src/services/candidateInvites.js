@@ -3,6 +3,7 @@ import { HR_ROLES } from '../middleware/auth.js';
 import { sendMail, isMailConfigured } from './mailer.js';
 import { createInviteToken } from './inviteToken.js';
 import { buildInviteEmail } from './inviteEmail.js';
+import { withEmailAllowance } from './workspaceLimits.js';
 
 /**
  * ─── Getting candidates into their screening ────────────────────────────────
@@ -78,7 +79,7 @@ function senderName() {
 /**
  * Emails one candidate their personal /join link and records the result on the candidate row.
  * @param {{ id: string, name: string, email: string }} candidate
- * @param {{ job_role: string, company_name?: string|null }} batch
+ * @param {{ job_role: string, company_name?: string|null, workspace_id?: string }} batch
  * @param {string} baseUrl
  * @returns {Promise<{ sent: boolean, error?: string }>}
  */
@@ -88,8 +89,11 @@ export async function sendInviteEmail(candidate, batch, baseUrl) {
     const { token, expiresAt } = createInviteToken(candidate.id, candidate.email);
     const link = `${baseUrl}/join?t=${encodeURIComponent(token)}`;
     const email = buildInviteEmail({ candidateName: candidate.name, jobRole: batch.job_role, companyName: batch.company_name, link, expiresAt, senderName: senderName() });
-    await sendMail({ to: candidate.email, ...email });
-    await db.markInviteEmail(candidate.id, { invite_email_sent_at: new Date().toISOString(), invite_email_error: null });
+    // A demo workspace may send only so many invite emails a day (they go out from the app's mailbox).
+    await withEmailAllowance(batch.workspace_id, async () => {
+      await sendMail({ to: candidate.email, ...email });
+      await db.markInviteEmail(candidate.id, { invite_email_sent_at: new Date().toISOString(), invite_email_error: null });
+    });
     return { sent: true };
   } catch (err) {
     const error = String(err?.message || err).slice(0, 300);

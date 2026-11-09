@@ -1,6 +1,11 @@
-/** superadmin is shown as Admin. Admin and Recruiter are the HR team. */
-export type Role = 'superadmin' | 'recruiter' | 'candidate';
-export const isHrRole = (role?: Role | null) => role === 'superadmin' || role === 'recruiter';
+/**
+ * superadmin is shown as Admin; hr_lead as HR lead (leads a workspace made through the sign-up link).
+ * Admin, HR lead and Recruiter are the HR team, each inside their own workspace.
+ */
+export type Role = 'superadmin' | 'hr_lead' | 'recruiter' | 'candidate';
+export const isHrRole = (role?: Role | null) => role === 'superadmin' || role === 'hr_lead' || role === 'recruiter';
+/** Admin or HR lead: every campaign in their workspace, and the Team page. */
+export const isManagerRole = (role?: Role | null) => role === 'superadmin' || role === 'hr_lead';
 
 export type CampaignStatus = 'draft' | 'live' | 'closed';
 
@@ -266,9 +271,18 @@ export interface StaffMember {
   id: string;
   name: string | null;
   email: string;
-  role: 'superadmin' | 'recruiter';
+  role: 'superadmin' | 'hr_lead' | 'recruiter';
   created_at: string;
   campaigns: number;
   is_you?: boolean;
+}
+
+/** The signed-in HR user's workspace. limits and usage are set only for demo workspaces. */
+export interface WorkspaceSummary {
+  id: string;
+  name: string;
+  kind: 'main' | 'demo';
+  limits: { max_campaigns: number | null; max_candidates_per_campaign: number | null; max_completed_calls: number | null; max_members: number | null; max_emails_per_day: number | null } | null;
+  usage: { campaigns: number; members: number; completed_calls: number; emails_last_24h: number } | null;
 }
 

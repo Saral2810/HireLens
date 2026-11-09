@@ -61,21 +61,21 @@ const db = {
   supabase,
   isConfigured: !!supabase,
 
-  /** @returns {Promise<{id, name, email, role}|null>} */
+  /** @returns {Promise<{id, name, email, role, workspace_id}|null>} */
   async getProfile(userId) {
-    return unwrap(await requireClient().from('profiles').select('id, name, email, role').eq('id', userId).maybeSingle());
+    return unwrap(await requireClient().from('profiles').select('id, name, email, role, workspace_id').eq('id', userId).maybeSingle());
   },
 
   // Supabase Auth stores emails in lower case.
   async getProfileByEmail(email) {
-    return unwrap(await requireClient().from('profiles').select('id, name, email, role').eq('email', String(email).trim().toLowerCase()).maybeSingle());
+    return unwrap(await requireClient().from('profiles').select('id, name, email, role, workspace_id').eq('email', String(email).trim().toLowerCase()).maybeSingle());
   },
 
   /** Candidate row with its batch, or null. */
   async getCandidate(candidateId) {
     return unwrap(await requireClient()
       .from('candidates')
-      .select('id, batch_id, user_id, name, email, status, resume_path, ats_score, ats_breakdown, batch:batches(id, name, batch_date, job_role, company_name, created_by, status)')
+      .select('id, batch_id, user_id, name, email, status, resume_path, ats_score, ats_breakdown, batch:batches(id, name, batch_date, job_role, company_name, created_by, status, workspace_id)')
       .eq('id', candidateId)
       .maybeSingle());
   },
@@ -87,7 +87,7 @@ const db = {
   async getCandidateForUser(userId) {
     const rows = unwrap(await requireClient()
       .from('candidates')
-      .select('id, batch_id, name, email, status, failure_reason, consent_at, resume_path, resume_questions, is_fresher, batch:batches!inner(id, name, batch_date, job_role, company_name, company_intro, call_languages, job_description, status)')
+      .select('id, batch_id, name, email, status, failure_reason, consent_at, resume_path, resume_questions, is_fresher, batch:batches!inner(id, name, batch_date, job_role, company_name, company_intro, call_languages, job_description, status, workspace_id)')
       .eq('user_id', userId)
       .neq('batch.status', 'draft')
       .order('created_at', { ascending: false })
@@ -126,7 +126,7 @@ const db = {
   async listCandidatesByEmail(email) {
     return unwrap(await requireClient()
       .from('candidates')
-      .select('id, batch_id, user_id, batch:batches(id, created_by)')
+      .select('id, batch_id, user_id, batch:batches(id, created_by, workspace_id)')
       .eq('email', String(email).trim().toLowerCase()));
   },
 
@@ -165,12 +165,14 @@ const db = {
   // ── Batches (Phase E) ──
 
   /**
-   * Batches (campaigns), newest first, with candidate counts per status.
-   * @param {{ ownerId?: string }} [scope] only batches created by this user (recruiters)
+   * Batches (campaigns) of one workspace, newest first, with candidate counts per status.
+   * @param {{ workspaceId: string, ownerId?: string }} scope ownerId = only batches this user created (recruiters)
    */
-  async listBatches({ ownerId } = {}) {
+  async listBatches({ workspaceId, ownerId } = {}) {
+    if (!workspaceId) throw new Error('listBatches needs a workspaceId.');
     const client = requireClient();
-    let query = client.from('batches').select('*').order('batch_date', { ascending: false }).order('created_at', { ascending: false });
+    let query = client.from('batches').select('*').eq('workspace_id', workspaceId)
+      .order('batch_date', { ascending: false }).order('created_at', { ascending: false });
     if (ownerId) query = query.eq('created_by', ownerId);
     const batches = unwrap(await query);
     if (!batches?.length) return [];
@@ -436,22 +438,81 @@ const db = {
       .in('batch_id', batchIds));
   },
 
-  /** HR accounts (Admin and Recruiter) for the Team page. */
-  async listStaff() {
+  /** HR accounts (Admin, HR lead, Recruiter) of one workspace, for the Team page. */
+  async listStaff({ workspaceId } = {}) {
+    if (!workspaceId) throw new Error('listStaff needs a workspaceId.');
     return unwrap(await requireClient()
       .from('profiles')
       .select('id, name, email, role, created_at')
-      .in('role', ['superadmin', 'recruiter'])
+      .eq('workspace_id', workspaceId)
+      .in('role', ['superadmin', 'hr_lead', 'recruiter'])
       .order('created_at'));
   },
 
   async updateProfile(userId, fields) {
-    return unwrap(await requireClient().from('profiles').update(fields).eq('id', userId).select('id, name, email, role').maybeSingle());
+    return unwrap(await requireClient().from('profiles').update(fields).eq('id', userId).select('id, name, email, role, workspace_id').maybeSingle());
   },
 
   /** Moves every campaign of one HR account to another (before removing an account). */
   async reassignBatches(fromUserId, toUserId) {
     unwrap(await requireClient().from('batches').update({ created_by: toUserId }).eq('created_by', fromUserId));
+  },
+
+  // ── Workspaces ──
+
+  async getWorkspace(workspaceId) {
+    return unwrap(await requireClient().from('workspaces').select('*').eq('id', workspaceId).maybeSingle());
+  },
+
+  async createWorkspace(fields) {
+    return unwrap(await requireClient().from('workspaces').insert(fields).select('*').single());
+  },
+
+  async countWorkspaces({ kind }) {
+    const { count, error } = await requireClient().from('workspaces').select('id', { count: 'exact', head: true }).eq('kind', kind);
+    if (error) throw error;
+    return count || 0;
+  },
+
+  async countBatchesInWorkspace(workspaceId) {
+    const { count, error } = await requireClient().from('batches').select('id', { count: 'exact', head: true }).eq('workspace_id', workspaceId);
+    if (error) throw error;
+    return count || 0;
+  },
+
+  async countMembers(workspaceId) {
+    const { count, error } = await requireClient().from('profiles').select('id', { count: 'exact', head: true })
+      .eq('workspace_id', workspaceId).in('role', ['superadmin', 'hr_lead', 'recruiter']);
+    if (error) throw error;
+    return count || 0;
+  },
+
+  /** Candidate ids in a workspace's campaigns (a demo workspace holds a few dozen at most). */
+  async candidateIdsInWorkspace(workspaceId) {
+    const client = requireClient();
+    const batches = unwrap(await client.from('batches').select('id').eq('workspace_id', workspaceId)) || [];
+    if (!batches.length) return [];
+    const rows = unwrap(await client.from('candidates').select('id').in('batch_id', batches.map(b => b.id))) || [];
+    return rows.map(r => r.id);
+  },
+
+  async countCompletedCallsInWorkspace(workspaceId) {
+    const ids = await this.candidateIdsInWorkspace(workspaceId);
+    if (!ids.length) return 0;
+    const { count, error } = await requireClient().from('calls').select('id', { count: 'exact', head: true })
+      .eq('status', 'completed').in('candidate_id', ids);
+    if (error) throw error;
+    return count || 0;
+  },
+
+  /** Invite emails sent from a workspace since `sinceIso` (from candidates.invite_email_sent_at). */
+  async countInviteEmailsSince(workspaceId, sinceIso) {
+    const ids = await this.candidateIdsInWorkspace(workspaceId);
+    if (!ids.length) return 0;
+    const { count, error } = await requireClient().from('candidates').select('id', { count: 'exact', head: true })
+      .in('id', ids).gte('invite_email_sent_at', sinceIso);
+    if (error) throw error;
+    return count || 0;
   }
 };
 

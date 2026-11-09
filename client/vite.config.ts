@@ -7,14 +7,8 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    // The backend serves everything under /api, plus /health.
     proxy: {
-      '/leads': 'http://localhost:3000',
-      '/campaigns': 'http://localhost:3000',
-      '/scheduler': 'http://localhost:3000',
-      '/integrations': 'http://localhost:3000',
-      '/admin': 'http://localhost:3000',
-      '/oauth': 'http://localhost:3000',
-      '/tenants': 'http://localhost:3000',
       '/api': 'http://localhost:3000',
       '/health': 'http://localhost:3000'
     }

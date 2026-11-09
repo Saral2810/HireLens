@@ -18,8 +18,9 @@ UPDATE public.profiles SET role = 'superadmin' WHERE email = 'you@example.com';
 
 | Table | One row is… |
 |---|---|
-| `profiles` | one signed-in user; `role` is `superadmin` (HR) or `candidate`. Created automatically when an auth user is created |
-| `batches` | one batch, e.g. "Batch 1 – 24 Oct", with the job role |
+| `workspaces` | one HR team's space. `main` is the original team (no limits); `demo` ones are made through the sign-up link and have usage limits (`max_*` columns) |
+| `profiles` | one signed-in user, with their `workspace_id`; `role` is `superadmin` (Admin), `hr_lead` (leads a sign-up workspace), `recruiter` or `candidate`. Created automatically when an auth user is created |
+| `batches` | one batch (campaign), e.g. "Batch 1 – 24 Oct", with the job role and its `workspace_id` |
 | `hr_questions` | one fixed HR question in a batch (`position`, `answer_type`) |
 | `candidates` | one invited candidate (name, email, resume, `status`: invited → resume_uploaded → in_call → completed / failed) |
 | `calls` | one screening call: saved question plan, transcript, recording path, summary, fit score |
@@ -30,7 +31,9 @@ Private storage buckets: `resumes/<batch-id>/<candidate-id>.pdf` (PDF, 5 MB) and
 
 ## Access rules (Row Level Security)
 
-- **HR (`superadmin`)** reads and writes everything.
+- **Workspaces are separate:** nobody reaches another workspace's campaigns, candidates, results, files or team.
+- **Admin (`superadmin`) and HR lead (`hr_lead`)** read and write everything in their own workspace.
+- **Recruiters** only reach the campaigns they created.
 - **Candidates** can only **read** their own candidate row, call, answers, batch and files. Every change goes through the backend.
 - **Not signed in**: nothing.
 - Helper functions live in the `private` schema, which the Data API does not expose.

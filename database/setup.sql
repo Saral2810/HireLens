@@ -2,30 +2,16 @@
 -- HR Screening Voice Agent — ONE-FILE DATABASE SETUP
 -- For a NEW Supabase project: paste into Supabase → SQL Editor → Run.
 -- Generated from migrations/20261025_hr_screening_schema.sql, 20261025_rls_private_helpers.sql,
--- 20261025_candidate_resume_questions.sql, 20261026_roles_campaigns.sql, 20261026_invite_emails.sql (in that order).
--- (Step 1 drops the earlier sales-calling tables if present; on a fresh project it does nothing.)
+-- 20261025_candidate_resume_questions.sql, 20261026_roles_campaigns.sql, 20261026_invite_emails.sql and later
+-- migrations up to 20261109_workspaces.sql (in that order).
 -- ==============================================================================
 
 -- ==============================================================================
 -- HR Screening Voice Agent — schema (roadmap Phase C)
--- Replaces the earlier sales-calling schema. Run on the contest project only.
+-- Run on the contest project only.
 -- ==============================================================================
 
--- ── 1. Remove the earlier sales-calling schema (it was empty or auto-generated) ─
-DROP TABLE IF EXISTS
-  active_leads, agent_briefs, agent_variable_mappings, api_keys, archived_leads, audit_trail,
-  background_jobs, call_events, call_logs, call_queue, call_sessions, campaign_drafts, campaigns,
-  compliance_dnc_logs, concurrency_settings, concurrency_slots, config_audit_log, consent_logs,
-  cross_sell_logs, data_purge_logs, dnc_registry, lead_campaigns, lead_notes, leads, scripts,
-  tenant_users, tenant_voice_providers, webhook_endpoints, tenant_configs, external_call_logs
-  CASCADE;
-DROP FUNCTION IF EXISTS
-  fn_dispatch_acquire(varchar), fn_dispatch_release(varchar), fn_reserve_slot(varchar, uuid, varchar, varchar),
-  fn_release_slot(varchar), fn_reap_stranded_dispatches(), fn_next_callable_slot(timestamptz),
-  reap_stale_slots(integer), trg_fn_schedule_retry(), trg_fn_release_slot_on_call_session();
-DROP TYPE IF EXISTS tenant_role;
-
--- ── 2. Tables ───────────────────────────────────────────────────────────────
+-- ── 1. Tables ───────────────────────────────────────────────────────────────
 
 -- One row per signed-in user (HR or candidate). Created automatically from auth.users.
 CREATE TABLE public.profiles (
@@ -133,7 +119,7 @@ CREATE INDEX answers_call_idx             ON public.answers (call_id);
 CREATE INDEX batches_created_by_idx       ON public.batches (created_by);
 CREATE INDEX external_call_logs_session_idx ON public.external_call_logs (session_id, created_at);
 
--- ── 3. updated_at bookkeeping ───────────────────────────────────────────────
+-- ── 2. updated_at bookkeeping ───────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS trigger LANGUAGE plpgsql SET search_path = '' AS $$
 BEGIN
@@ -145,7 +131,7 @@ $$;
 CREATE TRIGGER batches_set_updated_at    BEFORE UPDATE ON public.batches    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 CREATE TRIGGER candidates_set_updated_at BEFORE UPDATE ON public.candidates FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
--- ── 4. Profiles from auth users ─────────────────────────────────────────────
+-- ── 3. Profiles from auth users ─────────────────────────────────────────────
 -- Role comes from app metadata (set only by the server): is_super_admin=true or role=superadmin.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
@@ -173,7 +159,7 @@ SELECT u.id, coalesce(u.email, ''), u.raw_user_meta_data ->> 'name',
 FROM auth.users u
 ON CONFLICT (id) DO NOTHING;
 
--- ── 5. Row Level Security ───────────────────────────────────────────────────
+-- ── 4. Row Level Security ───────────────────────────────────────────────────
 -- The backend uses the service-role key (bypasses RLS) and checks access in code too.
 -- These rules are the second safety net for anything using a user's own session.
 
@@ -221,7 +207,7 @@ CREATE POLICY calls_candidate_read ON public.calls FOR SELECT TO authenticated
 CREATE POLICY answers_candidate_read ON public.answers FOR SELECT TO authenticated
   USING (call_id IN (SELECT id FROM public.calls WHERE candidate_id IN (SELECT public.my_candidate_ids())));
 
--- ── 6. Private storage ──────────────────────────────────────────────────────
+-- ── 5. Private storage ──────────────────────────────────────────────────────
 -- resumes/<batch-id>/<candidate-id>.pdf     recordings/<batch-id>/<candidate-id>.webm
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types) VALUES
   ('resumes',    'resumes',    false, 5242880,  ARRAY['application/pdf']),
@@ -534,3 +520,110 @@ ALTER TABLE public.calls
 ALTER TABLE public.candidates
   ADD COLUMN IF NOT EXISTS ats_score smallint CHECK (ats_score IS NULL OR ats_score BETWEEN 0 AND 100),
   ADD COLUMN IF NOT EXISTS ats_breakdown jsonb;
+
+-- ─── Workspaces ──────────────────────────────────────────────────────────────
+-- Each HR team works in its own workspace: its campaigns, candidates, results and team are visible
+-- only inside it. The existing team becomes the 'main' workspace, with no limits. People who sign up
+-- through the sign-up link get a new 'demo' workspace with usage limits, as an HR lead.
+--
+-- Roles (profiles.role):
+--   superadmin  Admin of their workspace: every campaign in it, manages its team (Admins and Recruiters)
+--   hr_lead     leads a sign-up workspace: every campaign in it, adds and removes Recruiters only
+--   recruiter   only the campaigns they created
+--   candidate   only their own screening
+-- Nobody reaches another workspace. The backend (service role) checks the same rules in code;
+-- these policies are the safety net.
+
+-- ── 1. Workspaces ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.workspaces (
+  id                          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                        text NOT NULL CHECK (char_length(name) BETWEEN 1 AND 120),
+  kind                        text NOT NULL DEFAULT 'demo' CHECK (kind IN ('main', 'demo')),
+  -- Usage limits; NULL = no limit (the main workspace has none).
+  max_campaigns               integer CHECK (max_campaigns IS NULL OR max_campaigns >= 0),
+  max_candidates_per_campaign integer CHECK (max_candidates_per_campaign IS NULL OR max_candidates_per_campaign >= 0),
+  max_completed_calls         integer CHECK (max_completed_calls IS NULL OR max_completed_calls >= 0),
+  max_members                 integer CHECK (max_members IS NULL OR max_members >= 0),
+  max_emails_per_day          integer CHECK (max_emails_per_day IS NULL OR max_emails_per_day >= 0),
+  created_by                  uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at                  timestamptz NOT NULL DEFAULT now()
+);
+
+-- The existing team's workspace. Its id is fixed so the backend can name it.
+INSERT INTO public.workspaces (id, name, kind)
+VALUES ('00000000-0000-0000-0000-000000000001', 'Main workspace', 'main')
+ON CONFLICT (id) DO NOTHING;
+
+-- ── 2. Profiles and campaigns belong to a workspace ───────────────────────────
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
+ALTER TABLE public.profiles ADD CONSTRAINT profiles_role_check
+  CHECK (role IN ('superadmin', 'hr_lead', 'recruiter', 'candidate'));
+
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS workspace_id uuid REFERENCES public.workspaces(id) ON DELETE SET NULL;
+UPDATE public.profiles SET workspace_id = '00000000-0000-0000-0000-000000000001'
+WHERE role IN ('superadmin', 'recruiter') AND workspace_id IS NULL;
+
+ALTER TABLE public.batches ADD COLUMN IF NOT EXISTS workspace_id uuid REFERENCES public.workspaces(id) ON DELETE CASCADE;
+UPDATE public.batches SET workspace_id = '00000000-0000-0000-0000-000000000001' WHERE workspace_id IS NULL;
+ALTER TABLE public.batches ALTER COLUMN workspace_id SET NOT NULL;
+
+CREATE INDEX IF NOT EXISTS profiles_workspace_idx ON public.profiles (workspace_id);
+CREATE INDEX IF NOT EXISTS batches_workspace_idx ON public.batches (workspace_id);
+
+-- ── 3. Helpers (private schema: not reachable through the Data API) ───────────
+CREATE OR REPLACE FUNCTION private.my_workspace_id()
+RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
+  SELECT workspace_id FROM public.profiles
+  WHERE id = (SELECT auth.uid()) AND role IN ('superadmin', 'hr_lead', 'recruiter');
+$$;
+
+-- Admin or HR lead: manages everything inside their own workspace.
+CREATE OR REPLACE FUNCTION private.is_workspace_manager()
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
+  SELECT EXISTS (SELECT 1 FROM public.profiles WHERE id = (SELECT auth.uid()) AND role IN ('superadmin', 'hr_lead'));
+$$;
+
+CREATE OR REPLACE FUNCTION private.is_hr()
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
+  SELECT EXISTS (SELECT 1 FROM public.profiles WHERE id = (SELECT auth.uid()) AND role IN ('superadmin', 'hr_lead', 'recruiter'));
+$$;
+
+-- A campaign is reachable only inside the user's own workspace: managers reach all of it,
+-- a recruiter only the campaigns they created.
+CREATE OR REPLACE FUNCTION private.can_manage_batch(target uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles p
+    JOIN public.batches b ON b.id = target
+    WHERE p.id = (SELECT auth.uid())
+      AND p.workspace_id IS NOT NULL
+      AND b.workspace_id = p.workspace_id
+      AND (p.role IN ('superadmin', 'hr_lead') OR (p.role = 'recruiter' AND b.created_by = p.id))
+  );
+$$;
+
+REVOKE EXECUTE ON FUNCTION private.my_workspace_id(), private.is_workspace_manager(), private.is_hr(), private.can_manage_batch(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION private.my_workspace_id(), private.is_workspace_manager(), private.is_hr(), private.can_manage_batch(uuid) TO authenticated;
+
+-- ── 4. Policies that used to reach every workspace ────────────────────────────
+-- Old policies from earlier migrations, in case any remain on a project.
+DROP POLICY IF EXISTS profiles_select ON public.profiles;
+DROP POLICY IF EXISTS hr_questions_hr_all ON public.hr_questions;
+DROP POLICY IF EXISTS screening_files_hr_all ON storage.objects;
+
+-- New campaigns go only into the creator's own workspace.
+DROP POLICY IF EXISTS batches_hr_insert ON public.batches;
+CREATE POLICY batches_hr_insert ON public.batches FOR INSERT TO authenticated
+  WITH CHECK ((SELECT private.is_hr()) AND created_by = (SELECT auth.uid()) AND workspace_id = (SELECT private.my_workspace_id()));
+
+-- Everyone reads their own profile; Admins and HR leads read their own workspace's team.
+DROP POLICY IF EXISTS profiles_read ON public.profiles;
+CREATE POLICY profiles_read ON public.profiles FOR SELECT TO authenticated
+  USING (id = (SELECT auth.uid())
+         OR ((SELECT private.is_workspace_manager()) AND workspace_id = (SELECT private.my_workspace_id())));
+
+-- Workspaces: HR reads only their own. Only the backend creates or changes them.
+ALTER TABLE public.workspaces ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS workspaces_read ON public.workspaces;
+CREATE POLICY workspaces_read ON public.workspaces FOR SELECT TO authenticated
+  USING (id = (SELECT private.my_workspace_id()));

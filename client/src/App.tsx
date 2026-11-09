@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
-import { isHrRole } from './types';
+import { isHrRole, isManagerRole } from './types';
 import { AppHeader } from './components/layout/AppHeader';
 import { LandingPage } from './pages/public/LandingPage';
 import { LoginPage } from './pages/public/LoginPage';
@@ -15,8 +15,8 @@ import { TeamPage } from './pages/hr/TeamPage';
 import { CallSummaryPage } from './pages/hr/CallSummaryPage';
 import { CandidateHomePage } from './pages/candidate/CandidateHomePage';
 
-// Three roles, three areas: Admin and Recruiter under /hr, candidates under /candidate.
-// The backend enforces the same split (and recruiters only reach their own campaigns).
+// Two areas: the HR team (Admin, HR lead, Recruiter) under /hr, candidates under /candidate.
+// The backend enforces the same split, keeps each workspace separate, and limits recruiters to their own campaigns.
 export const App: React.FC = () => {
   const { currentUser, sessionChecked, initSession } = useAppStore();
   const location = useLocation();
@@ -59,7 +59,7 @@ export const App: React.FC = () => {
               <Route path="/hr/campaigns/new" element={<NewCampaignPage />} />
               <Route path="/hr/campaigns/:campaignId" element={<CampaignPage />} />
               <Route path="/hr/calls/:callId/summary" element={<CallSummaryPage />} />
-              {currentUser.role === 'superadmin' && <Route path="/hr/team" element={<TeamPage />} />}
+              {isManagerRole(currentUser.role) && <Route path="/hr/team" element={<TeamPage />} />}
             </>
           )}
           {!hr && <Route path="/candidate/*" element={<CandidateHomePage />} />}

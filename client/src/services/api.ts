@@ -1,4 +1,4 @@
-import { Analytics, AnswerType, Batch, BatchDetail, BatchResults, CallDetail, CallEndReason, CallLanguage, StaffMember, CallStartResult, CallTurnResult, CandidatePortal, CandidateRow, EmailQueueResult, HrQuestion, InviteLinkResult, ResumeUploadResult, User } from '../types';
+import { Analytics, AnswerType, Batch, BatchDetail, BatchResults, CallDetail, CallEndReason, CallLanguage, StaffMember, WorkspaceSummary, CallStartResult, CallTurnResult, CandidatePortal, CandidateRow, EmailQueueResult, HrQuestion, InviteLinkResult, ResumeUploadResult, User } from '../types';
 
 const TOKEN_KEY = 'hr_auth_token';
 
@@ -65,6 +65,27 @@ class ApiService {
     return res;
   }
 
+  /** open: anyone may sign up from the HR tab. valid: signing up with this code (or none, when open) works now. */
+  async hrSignupStatus(code = ''): Promise<{ open: boolean; valid: boolean }> {
+    return this.request(code ? `/api/auth/hr-signup?code=${encodeURIComponent(code)}` : '/api/auth/hr-signup');
+  }
+
+  /** Sign-up link + Google → a new demo workspace with this person as its HR lead (or signed in, if already HR). */
+  async googleHrSignup(credential: string, nonce: string, code: string, workspaceName: string): Promise<{ token: string; user: User; workspace: { id: string; name: string } | null }> {
+    const res = await this.request<{ token: string; user: User; workspace: { id: string; name: string } | null }>('/api/auth/google/hr-signup', {
+      method: 'POST', body: JSON.stringify({ credential, nonce, code, workspace_name: workspaceName })
+    });
+    if (res.token) this.setAuthToken(res.token);
+    return res;
+  }
+
+  /** HR team: Google's ID token → signed in, if an Admin added this email on the Team page. */
+  async googleHrToken(credential: string, nonce: string): Promise<{ token: string; user: User }> {
+    const res = await this.request<{ token: string; user: User }>('/api/auth/google/hr-token', { method: 'POST', body: JSON.stringify({ credential, nonce }) });
+    if (res.token) this.setAuthToken(res.token);
+    return res;
+  }
+
   /** Personal link from the invite email → signed in as that candidate (the server makes the session). */
   async joinScreening(token: string): Promise<{ token: string; user: User }> {
     const res = await this.request<{ token: string; user: User }>('/api/auth/join', { method: 'POST', body: JSON.stringify({ token }) });
@@ -112,11 +133,17 @@ class ApiService {
     return this.request('/api/hr/parse-candidates', { method: 'POST', body: form });
   }
 
+  /** The signed-in HR user's workspace, with limits and usage for demo workspaces. */
+  async workspace(): Promise<WorkspaceSummary> {
+    return this.request('/api/hr/workspace');
+  }
+
   async team(): Promise<StaffMember[]> {
     return this.request('/api/hr/team');
   }
 
-  async addTeamMember(fields: { name: string; email: string; password: string; role: 'superadmin' | 'recruiter' }): Promise<StaffMember> {
+  /** sign_in 'google': no password, they use Google with this email. 'password': they use `password`. */
+  async addTeamMember(fields: { name: string; email: string; role: 'superadmin' | 'recruiter'; sign_in: 'google' | 'password'; password?: string }): Promise<StaffMember> {
     return this.request('/api/hr/team', { method: 'POST', body: JSON.stringify(fields) });
   }
 
