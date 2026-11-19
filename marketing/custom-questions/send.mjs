@@ -30,8 +30,6 @@ const text = fill(`Still asking every candidate the same questions?
 
 Meet Custom Questions: add questions tailored to your role, and our voice agent will ask them in every screening call.
 
-Watch the quick demo: {{VIDEO_URL}}
-
 Where to find it
 1. Log in and click Campaigns > New campaign
 2. On the Questions step, type your question and click Add
