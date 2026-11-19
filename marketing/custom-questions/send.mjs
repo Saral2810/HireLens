@@ -28,7 +28,7 @@ const fill = (s) => s.replace(/{{(\w+)}}/g, (_, k) => LINKS[k] ?? `{{${k}}}`);
 const html = fill(readFileSync(join(here, 'email.html'), 'utf8'));
 const text = fill(`Still asking every candidate the same questions?
 
-Meet Custom Questions: add questions tailored to your role, and our voice agent will ask them in every screening call.
+Ask Custom Questions: add questions tailored to your role, and our voice agent will ask them in every screening call.
 
 Where to find it
 1. Log in and click Campaigns > New campaign
