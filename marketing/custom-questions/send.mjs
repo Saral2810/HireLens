@@ -13,8 +13,8 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const BASE = 'https://raw.githubusercontent.com/Saral2810/HireLens/coding_help/tender-gates-889gyp/marketing/custom-questions';
 const LINKS = {
-  GIF_URL: `${BASE}/hirelens-custom-questions.gif`,
-  VIDEO_URL: process.env.VIDEO_URL || 'https://github.com/Saral2810/HireLens/blob/coding_help/tender-gates-889gyp/marketing/custom-questions/hirelens-custom-questions.mp4',
+  GIF_URL: `${BASE}/hirelens-custom-questions-v2.gif`,
+  VIDEO_URL: process.env.VIDEO_URL || 'https://github.com/Saral2810/HireLens/blob/coding_help/tender-gates-889gyp/marketing/custom-questions/hirelens-custom-questions-v2.mp4',
   SITE_URL: 'https://hirelens-56td.onrender.com/login'
 };
 const SUBJECT = 'Check out the new feature update at HireLens: Custom Questions';
@@ -26,11 +26,11 @@ if (!to.length) { console.error('Give at least one recipient email.'); process.e
 
 const fill = (s) => s.replace(/{{(\w+)}}/g, (_, k) => LINKS[k] ?? `{{${k}}}`);
 const html = fill(readFileSync(join(here, 'email.html'), 'utf8'));
-const text = fill(`Still asking every candidate the same generic questions?
+const text = fill(`Still asking every candidate the same questions?
 
-Meet Custom Questions. Write the questions that matter for your role, and our voice agent asks them on every screening call.
+Meet Custom Questions: add questions tailored to your role, and our voice agent will ask them in every screening call.
 
-Watch the 5-second demo: {{VIDEO_URL}}
+Watch the quick demo: {{VIDEO_URL}}
 
 Where to find it
 1. Log in and click Campaigns > New campaign
