@@ -13,8 +13,8 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const BASE = 'https://raw.githubusercontent.com/Saral2810/HireLens/coding_help/tender-gates-889gyp/marketing/custom-questions';
 const LINKS = {
-  GIF_URL: `${BASE}/hirelens-custom-questions-v2.gif`,
-  VIDEO_URL: process.env.VIDEO_URL || 'https://github.com/Saral2810/HireLens/blob/coding_help/tender-gates-889gyp/marketing/custom-questions/hirelens-custom-questions-v2.mp4',
+  GIF_URL: `${BASE}/hirelens-custom-questions-v3.gif`,
+  VIDEO_URL: process.env.VIDEO_URL || 'https://github.com/Saral2810/HireLens/blob/coding_help/tender-gates-889gyp/marketing/custom-questions/hirelens-custom-questions-v3.mp4',
   SITE_URL: 'https://hirelens-56td.onrender.com/login'
 };
 const SUBJECT = 'Check out the new feature update at HireLens: Custom Questions';
